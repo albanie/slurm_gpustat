@@ -1,4 +1,9 @@
 """A simple tool for summarising GPU statistics on a slurm cluster
+
+The tool can be used in two ways:
+1. To simply query the current usage of GPUs on the cluster.
+2. To launch a daemon which will log usage over time.  This can then later be queried
+   to provide simple usage statistics.
 """
 import argparse
 import ast
@@ -13,32 +18,42 @@ import numpy as np
 
 from daemon import Daemon
 
+
+# SLURM states which indicate that the node is not available for submitting jobs
 INACCESSIBLE = {"drain*", "down*", "drng", "drain", "down"}
 
 
 class GPUStatDaemon(Daemon):
+    """A lightweight daemon which intermittently logs gpu usage to a text file.
+    """
     timestamp_format = "%Y-%m-%d_%H:%M:%S"
 
     def __init__(self, pidfile, log_path, log_interval):
+        """Create the daemon.
+
+        Args:
+            pidfile (str): the location of the daemon pid file.
+            log_path (str): the location where the historical log will be stored.
+            log_interval (int): the time interval (in seconds) at which gpu usage will
+                be stored to the log.
+        """
         Path(pidfile).parent.mkdir(exist_ok=True, parents=True)
         super().__init__(pidfile=pidfile)
         Path(log_path).parent.mkdir(exist_ok=True, parents=True)
         self.log_interval = log_interval
         self.log_path = log_path
 
-    def run(self):
-        print("Running GPUStatDaemon")
-        while True:
-            resources = parse_all_gpus()
-            usage = gpu_usage(resources)
-            log_row = self.serialize_usage(usage)
-            timestamp = datetime.now().strftime(GPUStatDaemon.timestamp_format)
-            with open(self.log_path, "a") as f:
-                f.write(f"{timestamp} {log_row}\n")
-            time.sleep(self.log_interval)
-
     def serialize_usage(self, usage):
-        """Convert data structure into an appropriate string for serialization"""
+        """Convert data structure into an appropriate string for serialization.
+
+        Args:
+            usage (a dict-like structure): a data-structure which has the form of a
+                dictionary, but may contain variants with length string representations
+                (e.g. defaultdict, OrderedDict etc.)
+
+        Returns:
+            (str): a string representation of the usage data strcture.
+        """
         for user, gpu_dict in usage.items():
             for key, subdict in gpu_dict.items():
                 usage[user][key] = dict(subdict)
@@ -47,7 +62,17 @@ class GPUStatDaemon(Daemon):
 
     @staticmethod
     def deserialize_usage(log_path):
-        """Convert csv -> list of dicts"""
+        """Parse the `usage` data structure by reading in the contents of the text-based
+        log file and deserializing.
+
+        Args:
+            log_path (str): the location of the log file.
+
+        Returns:
+            (list[dict]): a list of dicts, where each dict contains the time stamp
+                associated with a set of usage statistics, together with the statistics
+                themselves.
+        """
         if not Path(log_path).exists():
             raise ValueError(f"No historical log found.  Did you start the daemon?")
         with open(log_path, "r") as f:
@@ -60,8 +85,26 @@ class GPUStatDaemon(Daemon):
             data.append({"timestamp": dt, "usage": usage})
         return data
 
+    def run(self):
+        """Run the daemon - will intermittently log gpu usage to disk.
+        """
+        while True:
+            resources = parse_all_gpus()
+            usage = gpu_usage(resources)
+            log_row = self.serialize_usage(usage)
+            timestamp = datetime.now().strftime(GPUStatDaemon.timestamp_format)
+            with open(self.log_path, "a") as f:
+                f.write(f"{timestamp} {log_row}\n")
+            time.sleep(self.log_interval)
+
 
 def historical_summary(data):
+    """Print a short summary of the historical gpu usage logged by the daemon.
+
+    Args:
+        data (list): the data structure deserialized from the daemon log file (this is
+            the output of the GPUStatDaemon.deserialize_usage() function.)
+    """
     first_ts, last_ts = data[0]["timestamp"], data[1]["timestamp"]
     print(f"Historical data contains {len(data)} samples ({first_ts} to {last_ts})")
     latest_usage = data[-1]["usage"]
@@ -75,7 +118,7 @@ def historical_summary(data):
             type_counts = {key: sum(val.values()) for key, val in subdict.items()}
             for gpu_type in gpu_types:
                 history[user][gpu_type].append(type_counts.get(gpu_type, 0))
-            
+
     for user, subdict in history.items():
         print(f"GPU usage for {user}:")
         total = 0
@@ -89,6 +132,22 @@ def historical_summary(data):
 
 
 def split_node_str(node_str):
+    """Split SLURM node specifications into node_specs. Here a node_spec defines a range
+    of nodes that share the same naming scheme (and are grouped together using square
+    brackets).   E.g. 'node[1-3,4,6-9]' represents a single node_spec.
+
+    Examples:
+       A `node_str` of the form 'node[001-003]' will be returned as a single element
+           list: ['node[001-003]']
+       A `node_str` of the form 'node[001-002],node004' will be split into
+           ['node[001-002]', 'node004']
+
+    Args:
+        node_str (str): a SLURM-formatted list of nodes
+
+    Returns:
+        (list[str]): SLURM node specs.
+    """
     node_str = node_str.strip()
     breakpoints, stack = [0], []
     for ii, char in enumerate(node_str):
@@ -101,7 +160,22 @@ def split_node_str(node_str):
     end = len(node_str) + 1
     return [node_str[i: j - 1] for i, j in zip(breakpoints, breakpoints[1:] + [end])]
 
+
 def parse_node_names(node_str):
+    """Parse the node list produced by the SLURM tools into separate node names.
+
+    Examples:
+       A slurm `node_str` of the form 'node[001-003]' will be split into a list of the
+           form ['node001', 'node002', 'node003'].
+       A `node_str` of the form 'node[001-002],node004' will be split into
+           ['node001', 'node002', 'node004']
+
+    Args:
+        node_str (str): a SLURM-formatted list of nodes
+
+    Returns:
+        (list[str]): a list of separate node names.
+    """
     names = []
     node_specs = split_node_str(node_str)
     for node_spec in node_specs:
@@ -124,9 +198,16 @@ def parse_node_names(node_str):
 
 
 def parse_cmd(cmd):
+    """Parse the output of a shell command into a list of strings, one per line of output.
+
+    Args:
+        cmd (str): the shell command to be executed.
+
+    Returns:
+        (list[str]): the strings from each output line.
+    """
     output = subprocess.check_output(cmd, shell=True).decode("utf-8")
-    rows = [x for x in output.split("\n") if x]
-    return rows
+    return [x for x in output.split("\n") if x]
 
 
 def node_states():
