@@ -5,11 +5,11 @@ The tool can be used in two ways:
 2. To launch a daemon which will log usage over time.  This can then later be queried
    to provide simple usage statistics.
 """
-import ast
-import time
-import random
 import argparse
+import ast
+import random
 import subprocess
+import time
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -17,7 +17,6 @@ from pathlib import Path
 import numpy as np
 
 from daemon import Daemon
-
 
 # SLURM states which indicate that the node is not available for submitting jobs
 INACCESSIBLE = {"drain*", "down*", "drng", "drain", "down"}
