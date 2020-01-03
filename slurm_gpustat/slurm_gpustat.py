@@ -106,7 +106,7 @@ def historical_summary(data):
         data (list): the data structure deserialized from the daemon log file (this is
             the output of the GPUStatDaemon.deserialize_usage() function.)
     """
-    first_ts, last_ts = data[0]["timestamp"], data[1]["timestamp"]
+    first_ts, last_ts = data[0]["timestamp"], data[-1]["timestamp"]
     print(f"Historical data contains {len(data)} samples ({first_ts} to {last_ts})")
     latest_usage = data[-1]["usage"]
     users, gpu_types = set(), set()
