@@ -1,15 +1,15 @@
-"""A simple tool for summarising GPU statistics on a slurm cluster
+"""A simple tool for summarising GPU statistics on a slurm cluster.
 
 The tool can be used in two ways:
 1. To simply query the current usage of GPUs on the cluster.
 2. To launch a daemon which will log usage over time.  This can then later be queried
    to provide simple usage statistics.
 """
-import argparse
 import ast
-import random
-import subprocess
 import time
+import random
+import argparse
+import subprocess
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -211,6 +211,11 @@ def parse_cmd(cmd):
 
 
 def node_states():
+    """Query SLURM for the state of each managed node.
+
+    Returns:
+        (dict[str: str]): a mapping between node names and SLURM states.
+    """
     cmd = "sinfo --noheader"
     rows = parse_cmd(cmd)
     states = {}
@@ -223,6 +228,16 @@ def node_states():
 
 
 def parse_all_gpus(default_gpus=4):
+    """Query SLURM for the number and types of GPUs under management.
+
+    Args:
+        default_gpus (int :: 4): The number of GPUs estimated for nodes that have
+            incomplete SLURM meta data.
+
+    Returns:
+        (dict[str:list]): a mapping between node names and a list of the GPUs that they
+            have available.
+    """
     cmd = "sinfo -o '%50N|%30G' --noheader"
     rows = parse_cmd(cmd)
     resources = defaultdict(list)
@@ -243,6 +258,14 @@ def parse_all_gpus(default_gpus=4):
 
 
 def resource_by_type(resources):
+    """Determine the cluster capacity by gpu type
+
+    Args:
+        resources (dict): a summary of the cluster resources, organised by node name.
+
+    Args:
+        resources (dict): a summary of the cluster resources, organised by gpu type
+    """
     by_type = defaultdict(lambda: 0)
     for specs in resources.values():
         for spec in specs:
@@ -251,6 +274,12 @@ def resource_by_type(resources):
 
 
 def summary_by_type(resources, tag):
+    """Print out out a summary of cluster resources, organised by gpu type.
+
+    Args:
+        resources (dict): a summary of cluster resources, organised by node name.
+        tag (str): a term that will be included in the printed summary.
+    """
     by_type = resource_by_type(resources)
     total = sum(by_type.values())
     agg_str = []
@@ -260,22 +289,37 @@ def summary_by_type(resources, tag):
     print("\n".join(agg_str))
 
 
-def summary(tag, resources=None, states=None):
+def summary(mode, resources=None, states=None):
+    """Generate a printed summary of the cluster resources.
+
+    Args:
+        mode (str): the kind of resources to query (must be one of 'accessible', 'up').
+        resources (dict :: None): a summary of cluster resources, organised by node name.
+        states (dict[str: str] :: None): a mapping between node names and SLURM states.
+    """
     if not resources:
         resources = parse_all_gpus()
     if not states:
         states = node_states()
-    if tag == "accessible":
+    if mode == "accessible":
         res = {key: val for key, val in resources.items()
                if states.get(key, "down") not in INACCESSIBLE}
-    elif tag == "up":
+    elif mode == "up":
         res = resources
     else:
-        raise ValueError(f"Unknown tag: {tag}")
-    summary_by_type(res, tag=tag)
+        raise ValueError(f"Unknown mode: {mode}")
+    summary_by_type(res, tag=mode)
 
 
 def gpu_usage(resources):
+    """Build a data structure of the cluster resource usage, organised by user.
+
+    Args:
+        resources (dict :: None): a summary of cluster resources, organised by node name.
+
+    Returns:
+        (dict): a summary of resources organised by user (and also by node name).
+    """
     cmd = "squeue -O tres-per-node,nodelist,username --noheader"
     rows = parse_cmd(cmd)
     usage = defaultdict(dict)
@@ -311,6 +355,11 @@ def gpu_usage(resources):
 
 
 def in_use(resources=None):
+    """Print a short summary of the resources that are currently used by each user.
+
+    Args:
+        resources (dict :: None): a summary of cluster resources, organised by node name.
+    """
     if not resources:
         resources = parse_all_gpus()
     usage = gpu_usage(resources)
@@ -325,8 +374,14 @@ def in_use(resources=None):
 
 
 def available(resources=None, states=None):
-    """Some systems allow users to share GPUs.  The logic below amounts to a conservative
-    estimate of how many GPUs are available.  The logic is essentially:
+    """Print a short summary of resources available on the cluster.
+
+    Args:
+        resources (dict :: None): a summary of cluster resources, organised by node name.
+        states (dict[str: str] :: None): a mapping between node names and SLURM states.
+    
+    NOTES: Some systems allow users to share GPUs.  The logic below amounts to a
+    conservative estimate of how many GPUs are available.  The algorithm is:
 
       For each user that requests a GPU on a node, we assume that a new GPU is allocated
       until all GPUs on the server are assigned.  If more GPUs than this are listed as
@@ -354,14 +409,18 @@ def available(resources=None, states=None):
 
 
 def all_info():
+    """Print a collection of summaries about SLURM gpu usage, including: all nodes
+    managed by the cluster, nodes that are currently accesible and gpu usage for each
+    active user.
+    """
     divider = "----------------------"
     print(divider)
     print("Under SLURM management")
     print(divider)
     resources = parse_all_gpus()
     states = node_states()
-    for tag in ("up", "accessible"):
-        summary(tag=tag, resources=resources, states=states)
+    for mode in ("up", "accessible"):
+        summary(mode=mode, resources=resources, states=states)
         print(divider)
     in_use(resources)
     print(divider)
@@ -371,11 +430,18 @@ def all_info():
 def main():
     parser = argparse.ArgumentParser(description="slurm_gpus tool")
     parser.add_argument("--action", default="current",
-                        choices=["current", "history", "daemon-start", "daemon-stop"])
+                        choices=["current", "history", "daemon-start", "daemon-stop"],
+                        help=("The function performed by slurm_gpustat: `current` will"
+                              " provide a summary of current usage, 'history' will "
+                              "provide statistics from historical data (provided that the"
+                              "logging daemon has been running). 'daemon-start' and"
+                              "'daemon-stop' will start and stop the daemon, resp."))
     parser.add_argument("--log_path",
-                        default=Path.home() / "data/daemons/logs/slurm_gpustat.log")
+                        default=Path.home() / "data/daemons/logs/slurm_gpustat.log",
+                        help="the location where daemon log files will be stored")
     parser.add_argument("--gpustat_pid",
-                        default=Path.home() / "data/daemons/pids/slurm_gpustat.pid")
+                        default=Path.home() / "data/daemons/pids/slurm_gpustat.pid",
+                        help="the location where the daemon PID file will be stored")
     parser.add_argument("--daemon_log_interval", type=int, default=43200,
                         help="time interval (secs) between stat logging (default 12 hrs)")
     args = parser.parse_args()
