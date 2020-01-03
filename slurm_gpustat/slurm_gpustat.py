@@ -1,12 +1,91 @@
 """A simple tool for summarising GPU statistics on a slurm cluster
 """
-import random
 import argparse
-from collections import defaultdict
+import ast
+import random
 import subprocess
+import time
+from collections import defaultdict
+from datetime import datetime
+from pathlib import Path
 
+import numpy as np
+
+from daemon import Daemon
 
 INACCESSIBLE = {"drain*", "down*", "drng", "drain", "down"}
+
+
+class GPUStatDaemon(Daemon):
+    timestamp_format = "%Y-%m-%d_%H:%M:%S"
+
+    def __init__(self, pidfile, log_path, log_interval):
+        Path(pidfile).parent.mkdir(exist_ok=True, parents=True)
+        super().__init__(pidfile=pidfile)
+        Path(log_path).parent.mkdir(exist_ok=True, parents=True)
+        self.log_interval = log_interval
+        self.log_path = log_path
+
+    def run(self):
+        print("Running GPUStatDaemon")
+        while True:
+            resources = parse_all_gpus()
+            usage = gpu_usage(resources)
+            log_row = self.serialize_usage(usage)
+            timestamp = datetime.now().strftime(GPUStatDaemon.timestamp_format)
+            with open(self.log_path, "a") as f:
+                f.write(f"{timestamp} {log_row}\n")
+            time.sleep(self.log_interval)
+
+    def serialize_usage(self, usage):
+        """Convert data structure into an appropriate string for serialization"""
+        for user, gpu_dict in usage.items():
+            for key, subdict in gpu_dict.items():
+                usage[user][key] = dict(subdict)
+        usage = dict(usage)
+        return usage.__repr__()
+
+    @staticmethod
+    def deserialize_usage(log_path):
+        """Convert csv -> list of dicts"""
+        if not Path(log_path).exists():
+            raise ValueError(f"No historical log found.  Did you start the daemon?")
+        with open(log_path, "r") as f:
+            rows = f.read().splitlines()
+        data = []
+        for row in rows:
+            ts, usage = row.split(maxsplit=1)
+            dt = datetime.strptime(ts, GPUStatDaemon.timestamp_format)
+            usage = ast.literal_eval(usage)
+            data.append({"timestamp": dt, "usage": usage})
+        return data
+
+
+def historical_summary(data):
+    first_ts, last_ts = data[0]["timestamp"], data[1]["timestamp"]
+    print(f"Historical data contains {len(data)} samples ({first_ts} to {last_ts})")
+    latest_usage = data[-1]["usage"]
+    users, gpu_types = set(), set()
+    for user, resources in latest_usage.items():
+        users.add(user)
+        gpu_types.update(set(resources.keys()))
+    history = {user: {gpu_type: [] for gpu_type in gpu_types} for user in users}
+    for row in data:
+        for user, subdict in row["usage"].items():
+            type_counts = {key: sum(val.values()) for key, val in subdict.items()}
+            for gpu_type in gpu_types:
+                history[user][gpu_type].append(type_counts.get(gpu_type, 0))
+            
+    for user, subdict in history.items():
+        print(f"GPU usage for {user}:")
+        total = 0
+        for gpu_type, counts in subdict.items():
+            counts = np.array(counts)
+            if counts.sum() == 0:
+                continue
+            print(f"{gpu_type:5s} > avg: {int(counts.mean())}, max: {np.max(counts)}")
+            total += counts.mean()
+        print(f"total > avg: {int(total)}\n")
 
 
 def split_node_str(node_str):
@@ -210,18 +289,33 @@ def all_info():
 
 def main():
     parser = argparse.ArgumentParser(description="slurm_gpus tool")
-    parser.add_argument("--all", type=int, default=1)
-    parser.add_argument("--in_use", action="store_true")
-    parser.add_argument("--available", action="store_true")
-    parser.add_argument("--verbose", action="store_true")
+    parser.add_argument("--action", default="current",
+                        choices=["current", "history", "daemon-start", "daemon-stop"])
+    parser.add_argument("--log_path",
+                        default=Path.home() / "data/daemons/logs/slurm_gpustat.log")
+    parser.add_argument("--gpustat_pid",
+                        default=Path.home() / "data/daemons/pids/slurm_gpustat.pid")
+    parser.add_argument("--daemon_log_interval", type=int, default=43200,
+                        help="time interval (secs) between stat logging (default 12 hrs)")
     args = parser.parse_args()
 
-    if args.all:
+    if args.action == "current":
         all_info()
-    if args.in_use:
-        in_use()
-    if args.available:
-        available()
+    elif args.action == "history":
+        data = GPUStatDaemon.deserialize_usage(args.log_path)
+        historical_summary(data)
+    elif args.action.startswith("daemon"):
+        daemon = GPUStatDaemon(
+            log_path=args.log_path,
+            log_interval=args.daemon_log_interval,
+            pidfile=args.gpustat_pid,
+        )
+        if args.action == "daemon-start":
+            print("Starting daemon")
+            daemon.start()
+        elif args.action == "daemon-stop":
+            print("Stopping daemon")
+            daemon.stop()
 
 
 if __name__ == "__main__":
