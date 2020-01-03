@@ -12,7 +12,7 @@ To print a summary of current activity:
 
 To start the logging dameon:
 
-`slurm_gpustat --action start_daemon`
+`slurm_gpustat --action daemon-start`
 
 To view a summary of logged data:
 
