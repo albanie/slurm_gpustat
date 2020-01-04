@@ -537,16 +537,18 @@ def available(resources=None, states=None):
         print(f"{key}: {val}")
 
 
-def all_info():
+def all_info(color):
     """Print a collection of summaries about SLURM gpu usage, including: all nodes
     managed by the cluster, nodes that are currently accesible and gpu usage for each
     active user.
     """
-    colors = sns.color_palette("hls", 8).as_hex()
-    divider = colored.stylize("---------------------------------", colored.fg(colors[7]))
+    divider, slurm_str = "---------------------------------", "SLURM"
+    if not color:
+        colors = sns.color_palette("hls", 8).as_hex()
+        divider = colored.stylize(divider, colored.fg(colors[7]))
+        slurm_str = colored.stylize(slurm_str, colored.fg(colors[0]))
     print(divider)
-    slurm = colored.stylize("SLURM", colored.fg(colors[0]))
-    print(f"Under {slurm} management")
+    print(f"Under {slurm_str} management")
     print(divider)
     resources = parse_all_gpus()
     states = node_states()
@@ -576,18 +578,19 @@ def main():
                         help="the location where the daemon PID file will be stored")
     parser.add_argument("--daemon_log_interval", type=int, default=43200,
                         help="time interval (secs) between stat logging (default 12 hrs)")
+    parser.add_argument("--color", type=int, default=1, help="color output")
     args = parser.parse_args()
 
     if args.action == "current":
-        all_info()
+        all_info(color=args.color)
     elif args.action == "history":
         data = GPUStatDaemon.deserialize_usage(args.log_path)
         historical_summary(data)
     elif args.action.startswith("daemon"):
         daemon = GPUStatDaemon(
             log_path=args.log_path,
-            log_interval=args.daemon_log_interval,
             pidfile=args.gpustat_pid,
+            log_interval=args.daemon_log_interval,
         )
         if args.action == "daemon-start":
             print("Starting daemon")
