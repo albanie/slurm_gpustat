@@ -9,6 +9,8 @@ import argparse
 import ast
 import random
 import subprocess
+import seaborn as sns
+import colored
 import time
 from collections import defaultdict
 from datetime import datetime
@@ -16,7 +18,7 @@ from pathlib import Path
 
 import numpy as np
 
-from daemon import Daemon
+from slurm_gpustat.daemon import Daemon
 
 # SLURM states which indicate that the node is not available for submitting jobs
 INACCESSIBLE = {"drain*", "down*", "drng", "drain", "down"}
@@ -414,9 +416,11 @@ def all_info():
     managed by the cluster, nodes that are currently accesible and gpu usage for each
     active user.
     """
-    divider = "----------------------"
+    colors = sns.color_palette("hls", 8).as_hex()
+    divider = colored.stylize("---------------------------------", colored.fg(colors[7]))
     print(divider)
-    print("Under SLURM management")
+    slurm = colored.stylize("SLURM", colored.fg(colors[0]))
+    print(f"Under {slurm} management")
     print(divider)
     resources = parse_all_gpus()
     states = node_states()
@@ -426,6 +430,7 @@ def all_info():
     in_use(resources)
     print(divider)
     available(resources=resources, states=states)
+    print(divider)
 
 
 def main():

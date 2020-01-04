@@ -1,2 +1,5 @@
 .vscode
 *.pyc
+dist
+slurm_gpustat.egg-info
+build

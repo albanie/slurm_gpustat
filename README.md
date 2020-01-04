@@ -4,6 +4,11 @@
 1. To query the current usage of GPUs on the cluster.
 2. To launch a daemon which will log usage over time.  This log can later be queried to provide usage statistics.
 
+### Installation
+
+Install via `pip install slurm_gpustat`.  If you prefer to hack around with the source code, it's a [single python file](slurm_gpustat/slurm_gpustat.py).
+
+
 ### Usage
 
 To print a summary of current activity:
@@ -12,7 +17,7 @@ To print a summary of current activity:
 
 To start the logging dameon:
 
-`slurm_gpustat --action start_daemon`
+`slurm_gpustat --action daemon-start`
 
 To view a summary of logged data:
 
@@ -64,12 +69,6 @@ GPU usage for user2:
 p40m  > avg: 3, max: 4
 total > avg: 3
 ```
-
-
-### Installation
-
-Install via `pip install slurm_gpustat`.  If you prefer to hack around with the source code, it's a [single python file](slurm_gpustat/slurm_gpustat.py).
-
 
 ### Dependencies
 

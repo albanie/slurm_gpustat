@@ -3,7 +3,8 @@
 This code is a Python3 port of Sander Marechal's Daemon module:
 http://web.archive.org/web/20131017130434/http://www.jejik.com/articles/2007/02/a_simple_unix_linux_daemon_in_python/
 
-The port was published anonymously here:
+It's a little difficult to credit the author of the Python3 port, since the code was
+published anonymously. The original can be found here:
 http://web.archive.org/web/20131101191715/http://www.jejik.com/files/examples/daemon3x.py
 """
 
@@ -82,8 +83,7 @@ class Daemon:
             pid = None
 
         if pid:
-            message = "pidfile {0} already exist. " + \
-              "Daemon already running?\n"
+            message = "pidfile {0} already exists. Is the daemon already running?\n"
             sys.stderr.write(message.format(self.pidfile))
             sys.exit(1)
 
