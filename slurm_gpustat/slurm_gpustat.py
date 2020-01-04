@@ -111,9 +111,11 @@ def historical_summary(data):
     for user, resources in latest_usage.items():
         users.add(user)
         gpu_types.update(set(resources.keys()))
-    history = {user: {gpu_type: [] for gpu_type in gpu_types} for user in users}
+    history = {}
     for row in data:
         for user, subdict in row["usage"].items():
+            if user not in history:
+                history[user] = {gpu_type: [] for gpu_type in gpu_types}
             type_counts = {key: sum(val.values()) for key, val in subdict.items()}
             for gpu_type in gpu_types:
                 history[user][gpu_type].append(type_counts.get(gpu_type, 0))
