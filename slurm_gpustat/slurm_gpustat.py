@@ -543,7 +543,7 @@ def all_info(color):
     active user.
     """
     divider, slurm_str = "---------------------------------", "SLURM"
-    if not color:
+    if color:
         colors = sns.color_palette("hls", 8).as_hex()
         divider = colored.stylize(divider, colored.fg(colors[7]))
         slurm_str = colored.stylize(slurm_str, colored.fg(colors[0]))
