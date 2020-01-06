@@ -466,6 +466,10 @@ def gpu_usage(resources):
             gpu_type = gpu_count_tokens[1]
         node_names = parse_node_names(node_str)
         for node_name in node_names:
+            # If a node still has jobs running but is draining, it will not be present
+            # in the "available" resources, so we ignore it
+            if node_name not in resources:
+                continue
             node_gpu_types = [x["type"] for x in resources[node_name]]
             if gpu_type is None:
                 if len(node_gpu_types) != 1:
