@@ -24,6 +24,7 @@ setuptools.setup(
         "numpy",
         "colored",
         "seaborn",
+        "scipy>=1.4.1"
     ],
     classifiers=[
         "Programming Language :: Python :: 3.6",
