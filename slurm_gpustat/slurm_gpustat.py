@@ -486,6 +486,11 @@ def gpu_usage(resources):
                 usage[user][gpu_type][node_name] += num_gpus
     return usage
 
+import re
+def num(a):
+    a = a.replace("k", "000")
+    a = re.sub("[^0-9]", "", a)
+    return int(a)
 
 def in_use(resources=None):
     """Print a short summary of the resources that are currently used by each user.
@@ -503,7 +508,10 @@ def in_use(resources=None):
     for user, subdict in sorted(aggregates.items(), key=lambda x: sum(x[1].values())):
         total = f"total: {str(sum(subdict.values())):2s}"
         summary_str = ", ".join([f"{key}: {val}" for key, val in subdict.items()])
-        print(f"{user:10s} [{total}] {summary_str}")
+
+        fun_total = [num(key)*val for key, val in subdict.items()]
+
+        print(f"{user:10s} [{total}] {summary_str} {fun_total}")
 
 
 def available(resources=None, states=None):
@@ -512,7 +520,7 @@ def available(resources=None, states=None):
     Args:
         resources (dict :: None): a summary of cluster resources, organised by node name.
         states (dict[str: str] :: None): a mapping between node names and SLURM states.
-    
+
     NOTES: Some systems allow users to share GPUs.  The logic below amounts to a
     conservative estimate of how many GPUs are available.  The algorithm is:
 
