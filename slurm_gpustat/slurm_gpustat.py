@@ -384,7 +384,7 @@ def occupancy_stats_for_node(node: str) -> Dict[str, int]:
                 metrics[key] = {x.split("=")[0]: x.split("=")[1] for x in tokens}
     occupancy = {}
     for metric, alloc_val in metrics["AllocTRES"].items():
-        cfg_val = metrics["CfgTRES"][metric]
+        cfg_val = metrics["CfgTRES"][metric] if metric != 'mem' else str(int(float(metrics["CfgTRES"][metric].split('M')[0])/1000.)) +'G'
         occupancy[metric] = f"{alloc_val}/{cfg_val}"
     return occupancy
 
