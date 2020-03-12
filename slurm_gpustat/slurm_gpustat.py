@@ -17,10 +17,14 @@ import time
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
+from typing import Dict, List
+import functools
 
 import colored
 import numpy as np
 import seaborn as sns
+
+from zsvision.zs_beartype import beartype
 
 # SLURM states which indicate that the node is not available for submitting jobs
 INACCESSIBLE = {"drain*", "down*", "drng", "drain", "down"}
@@ -145,7 +149,7 @@ class Daemon:
 
     def run(self):
         """You should override this method when you subclass Daemon.
-        It will be called after the process has been daemonized by 
+        It will be called after the process has been daemonized by
         start() or restart()."""
         raise NotImplementedError("Must override this class")
 
@@ -339,11 +343,12 @@ def parse_cmd(cmd):
     return [x for x in output.split("\n") if x]
 
 
-def node_states():
+@beartype
+def node_states() -> Dict[str, str]:
     """Query SLURM for the state of each managed node.
 
     Returns:
-        (dict[str: str]): a mapping between node names and SLURM states.
+        a mapping between node names and SLURM states.
     """
     cmd = "sinfo --noheader"
     rows = parse_cmd(cmd)
@@ -356,16 +361,48 @@ def node_states():
     return states
 
 
-def parse_all_gpus(default_gpus=4):
+@beartype
+@functools.lru_cache(maxsize=64, typed=True)
+def occupancy_stats_for_node(node: str) -> Dict[str, int]:
+    """Query SLURM for the occupancy of a given node.
+
+    Args:
+        (node): the name of the node to query
+
+    Returns:
+        a mapping between node names and occupancy stats.
+    """
+    cmd = f"scontrol show node {node}"
+    rows = [x.strip() for x in parse_cmd(cmd)]
+    keys = ("AllocTRES", "CfgTRES")
+    metrics = {}
+    for row in rows:
+        for key in keys:
+            if row.startswith(key):
+                row = row.replace(f"{key}=", "")
+                tokens = row.split(",")
+                metrics[key] = {x.split("=")[0]: x.split("=")[1] for x in tokens}
+    occupancy = {}
+    for metric, alloc_val in metrics["AllocTRES"].items():
+        cfg_val = metrics["CfgTRES"][metric]
+        occupancy[metric] = f"{alloc_val}/{cfg_val}"
+    # for alloc, cfg in zip([metrics[key] for key in keys]):
+    #     alloc_key, alloc_val = alloc.split(",")
+    #     cfg_key, cfg_val = cfg.split(",")
+    #     assert alloc_key == cfg_key, f"Expected {alloc_key} to match {cfg_key}"
+    return occupancy
+
+
+@beartype
+def parse_all_gpus(default_gpus: int = 4) -> Dict[str, List]:
     """Query SLURM for the number and types of GPUs under management.
 
     Args:
-        default_gpus (int :: 4): The number of GPUs estimated for nodes that have
-            incomplete SLURM meta data.
+        default_gpus: The number of GPUs estimated for nodes that have incomplete SLURM
+            meta data.
 
     Returns:
-        (dict[str:list]): a mapping between node names and a list of the GPUs that they
-            have available.
+        a mapping between node names and a list of the GPUs that they have available.
     """
     cmd = "sinfo -o '%50N|%30G' --noheader"
     rows = parse_cmd(cmd)
@@ -386,23 +423,25 @@ def parse_all_gpus(default_gpus=4):
     return resources
 
 
-def resource_by_type(resources):
+@beartype
+def resource_by_type(resources: Dict[str, Dict]) -> Dict[str, Dict]:
     """Determine the cluster capacity by gpu type
 
     Args:
-        resources (dict): a summary of the cluster resources, organised by node name.
+        resources: a summary of the cluster resources, organised by node name.
 
-    Args:
-        resources (dict): a summary of the cluster resources, organised by gpu type
+    Returns:
+        resources: a summary of the cluster resources, organised by gpu type
     """
-    by_type = defaultdict(lambda: 0)
-    for specs in resources.values():
+    by_type = defaultdict(list)
+    for node, specs in resources.items():
         for spec in specs:
-            by_type[spec["type"]] += spec["count"]
+            by_type[spec["type"]].append({"node": node, "count": spec["count"]})
     return by_type
 
 
-def summary_by_type(resources, tag):
+@beartype
+def summary_by_type(resources: Dict[str, Dict], tag: str):
     """Print out out a summary of cluster resources, organised by gpu type.
 
     Args:
@@ -410,15 +449,17 @@ def summary_by_type(resources, tag):
         tag (str): a term that will be included in the printed summary.
     """
     by_type = resource_by_type(resources)
-    total = sum(by_type.values())
+    total = sum(x["count"] for sublist in by_type.values() for x in sublist)
     agg_str = []
-    for key, val in sorted(by_type.items(), key=lambda x: x[1]):
-        agg_str.append(f"{val} {key} gpus")
+    for key, val in sorted(by_type.items(), key=lambda x: sum(y["count"] for y in x[1])):
+        gpu_count = sum(x["count"] for x in val)
+        agg_str.append(f"{gpu_count} {key} gpus")
     print(f"There are a total of {total} gpus [{tag}]")
     print("\n".join(agg_str))
 
 
-def summary(mode, resources=None, states=None):
+@beartype
+def summary(mode: str, resources: Dict[str, Dict] = None, states: Dict[str, List] = None):
     """Generate a printed summary of the cluster resources.
 
     Args:
@@ -440,7 +481,8 @@ def summary(mode, resources=None, states=None):
     summary_by_type(res, tag=mode)
 
 
-def gpu_usage(resources):
+@beartype
+def gpu_usage(resources: Dict[str, Dict]) -> Dict[str, Dict]:
     """Build a data structure of the cluster resource usage, organised by user.
 
     Args:
@@ -487,11 +529,12 @@ def gpu_usage(resources):
     return usage
 
 
-def in_use(resources=None):
+@beartype
+def in_use(resources: Dict[str, Dict] = None):
     """Print a short summary of the resources that are currently used by each user.
 
     Args:
-        resources (dict :: None): a summary of cluster resources, organised by node name.
+        resources: a summary of cluster resources, organised by node name.
     """
     if not resources:
         resources = parse_all_gpus()
@@ -506,13 +549,18 @@ def in_use(resources=None):
         print(f"{user:10s} [{total}] {summary_str}")
 
 
-def available(resources=None, states=None):
+@beartype
+def available(
+        resources: Dict[str, Dict] = None,
+        states: Dict[str, str] = None,
+        verbose: bool = False,
+):
     """Print a short summary of resources available on the cluster.
 
     Args:
-        resources (dict :: None): a summary of cluster resources, organised by node name.
-        states (dict[str: str] :: None): a mapping between node names and SLURM states.
-    
+        resources: a summary of cluster resources, organised by node name.
+        states: a mapping between node names and SLURM states.
+
     NOTES: Some systems allow users to share GPUs.  The logic below amounts to a
     conservative estimate of how many GPUs are available.  The algorithm is:
 
@@ -535,13 +583,27 @@ def available(resources=None, states=None):
                 count = max(count - user_gpu_count, 0)
                 res[node_name][resource_idx]["count"] = count
     by_type = resource_by_type(res)
-    total = sum(by_type.values())
+    total = sum(x["count"] for sublist in by_type.values() for x in sublist)
     print(f"There are {total} gpus available:")
-    for key, val in by_type.items():
-        print(f"{key}: {val}")
+    for key, counts_for_gpu_type in by_type.items():
+        gpu_count = sum(x["count"] for x in counts_for_gpu_type)
+        tail = ""
+        if verbose:
+            summary = []
+            for x in counts_for_gpu_type:
+                node, count = x["node"], x["count"]
+                if count:
+                    occupancy = occupancy_stats_for_node(node)
+                    users = [user for user in usage if node in usage[user].get(key, [])]
+                    details = [f"{key}: {val}" for key, val in sorted(occupancy.items())]
+                    details = f"[{', '.join(details)}] [{','.join(users)}]"
+                    summary.append(f"\n\t{node}: {count} {key} {details}")
+            tail = " ".join(summary)
+        print(f"{key}: {gpu_count} {tail}")
 
 
-def all_info(color):
+@beartype
+def all_info(color: int, verbose: bool):
     """Print a collection of summaries about SLURM gpu usage, including: all nodes
     managed by the cluster, nodes that are currently accesible and gpu usage for each
     active user.
@@ -561,7 +623,7 @@ def all_info(color):
         print(divider)
     in_use(resources)
     print(divider)
-    available(resources=resources, states=states)
+    available(resources=resources, states=states, verbose=verbose)
     print(divider)
 
 
@@ -583,10 +645,12 @@ def main():
     parser.add_argument("--daemon_log_interval", type=int, default=43200,
                         help="time interval (secs) between stat logging (default 12 hrs)")
     parser.add_argument("--color", type=int, default=1, help="color output")
+    parser.add_argument("--verbose", action="store_true",
+                        help="provide a more detailed breakdown of resources")
     args = parser.parse_args()
 
     if args.action == "current":
-        all_info(color=args.color)
+        all_info(color=args.color, verbose=args.verbose)
     elif args.action == "history":
         data = GPUStatDaemon.deserialize_usage(args.log_path)
         historical_summary(data)
