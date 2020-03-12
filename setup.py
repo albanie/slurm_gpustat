@@ -7,7 +7,7 @@ with open("README.md", "r") as f:
 
 setuptools.setup(
     name="slurm_gpustat",
-    version="0.0.3.8",
+    version="0.0.3.9",
     entry_points={
         "console_scripts": [
             "slurm_gpustat=slurm_gpustat.slurm_gpustat:main",
@@ -24,6 +24,7 @@ setuptools.setup(
         "numpy",
         "colored",
         "seaborn",
+        "zsvision",
         "scipy>=1.4.1"
     ],
     classifiers=[
