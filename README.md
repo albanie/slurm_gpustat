@@ -56,6 +56,27 @@ v100: 2
 m40: 2
 ```
 
+Adding `--verbose` to this command will produce a more detailed breakdown for the section describing gpus that are still available.  Example output:
+```
+There are 18 gpus available:
+m40: 5 available
+ -> gnodeb3: 1 m40 [cpu: 38/40, gres/gpu: 3/4, mem: 68G/257669M] [user1,user2]
+ -> gnodeb4: 2 m40 [cpu: 38/40, gres/gpu: 2/4, mem: 60G/193161M] [user1,user2]
+ -> gnodec3: 2 m40 [cpu: 12/48, gres/gpu: 2/4, mem: 36G/257669M] [user1]
+p40: 5 available
+ -> gnodec4: 1 p40 [cpu: 20/48, gres/gpu: 3/4, mem: 216G/257669M] [user1]
+ -> gnoded1: 1 p40 [cpu: 44/64, gres/gpu: 3/4, mem: 60G/385192M] [user4,user5]
+ -> gnoded3: 1 p40 [cpu: 28/64, gres/gpu: 3/4, mem: 70G/385192M] [user2,user4,user5]
+ -> gnoded4: 1 p40 [cpu: 28/64, gres/gpu: 3/4, mem: 112G/385192M] [user5,user4]
+ -> gnodee3: 1 p40 [cpu: 36/56, gres/gpu: 3/4, mem: 60G/385192M] [user4,user2]
+rtx6k: 3 available
+ -> gnodef1: 1 rtx6k [cpu: 36/56, gres/gpu: 3/4, mem: 194G/257669M] [user2,user3]
+ -> gnodeh2: 2 rtx6k [cpu: 16/24, gres/gpu: 2/4, mem: 96G/385345M] [user2,user1]
+v100: 5 available
+ -> gnodeg1: 2 v100 [cpu: 16/64, gres/gpu: 2/4, mem: 60G/191668M] [user5,user1]
+ -> gnodeg2: 3 v100 [cpu: 8/64, gres/gpu: 1/4, mem: 40G/191668M] [user2]
+```
+
 Running `slurm_gpustat --history` (after the daemon has run for a little while) will produce something like this:
 
 ```

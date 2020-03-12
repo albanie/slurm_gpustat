@@ -386,10 +386,6 @@ def occupancy_stats_for_node(node: str) -> Dict[str, int]:
     for metric, alloc_val in metrics["AllocTRES"].items():
         cfg_val = metrics["CfgTRES"][metric]
         occupancy[metric] = f"{alloc_val}/{cfg_val}"
-    # for alloc, cfg in zip([metrics[key] for key in keys]):
-    #     alloc_key, alloc_val = alloc.split(",")
-    #     cfg_key, cfg_val = cfg.split(",")
-    #     assert alloc_key == cfg_key, f"Expected {alloc_key} to match {cfg_key}"
     return occupancy
 
 
@@ -597,9 +593,9 @@ def available(
                     users = [user for user in usage if node in usage[user].get(key, [])]
                     details = [f"{key}: {val}" for key, val in sorted(occupancy.items())]
                     details = f"[{', '.join(details)}] [{','.join(users)}]"
-                    summary.append(f"\n\t{node}: {count} {key} {details}")
+                    summary.append(f"\n -> {node}: {count} {key} {details}")
             tail = " ".join(summary)
-        print(f"{key}: {gpu_count} {tail}")
+        print(f"{key}: {gpu_count} available {tail}")
 
 
 @beartype
