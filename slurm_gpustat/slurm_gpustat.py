@@ -344,7 +344,7 @@ def parse_cmd(cmd):
 
 
 @beartype
-def node_states() -> Dict[str, str]:
+def node_states() -> dict:
     """Query SLURM for the state of each managed node.
 
     Returns:
@@ -363,7 +363,7 @@ def node_states() -> Dict[str, str]:
 
 @beartype
 @functools.lru_cache(maxsize=64, typed=True)
-def occupancy_stats_for_node(node: str) -> Dict[str, int]:
+def occupancy_stats_for_node(node: str) -> dict:
     """Query SLURM for the occupancy of a given node.
 
     Args:
@@ -396,7 +396,7 @@ def occupancy_stats_for_node(node: str) -> Dict[str, int]:
 
 
 @beartype
-def parse_all_gpus(default_gpus: int = 4) -> Dict[str, List]:
+def parse_all_gpus(default_gpus: int = 4) -> dict:
     """Query SLURM for the number and types of GPUs under management.
 
     Args:
@@ -416,7 +416,6 @@ def parse_all_gpus(default_gpus: int = 4) -> Dict[str, List]:
                 continue
             tokens = resource_str.strip().split(":")
             # if the number of GPUs is not specified, we assume it is `default_gpus`
-            import ipdb; ipdb.set_trace()
             if tokens[2] == "":
                 tokens[2] = default_gpus
             gpu_type, gpu_count = tokens[1], int(tokens[2])
@@ -427,7 +426,7 @@ def parse_all_gpus(default_gpus: int = 4) -> Dict[str, List]:
 
 
 @beartype
-def resource_by_type(resources: Dict[str, Dict]) -> Dict[str, Dict]:
+def resource_by_type(resources: dict) -> dict:
     """Determine the cluster capacity by gpu type
 
     Args:
@@ -444,7 +443,7 @@ def resource_by_type(resources: Dict[str, Dict]) -> Dict[str, Dict]:
 
 
 @beartype
-def summary_by_type(resources: Dict[str, Dict], tag: str):
+def summary_by_type(resources: dict, tag: str):
     """Print out out a summary of cluster resources, organised by gpu type.
 
     Args:
@@ -462,7 +461,7 @@ def summary_by_type(resources: Dict[str, Dict], tag: str):
 
 
 @beartype
-def summary(mode: str, resources: Dict[str, Dict] = None, states: Dict[str, List] = None):
+def summary(mode: str, resources: dict = None, states: dict = None):
     """Generate a printed summary of the cluster resources.
 
     Args:
@@ -485,7 +484,7 @@ def summary(mode: str, resources: Dict[str, Dict] = None, states: Dict[str, List
 
 
 @beartype
-def gpu_usage(resources: Dict[str, Dict]) -> Dict[str, Dict]:
+def gpu_usage(resources: dict) -> dict:
     """Build a data structure of the cluster resource usage, organised by user.
 
     Args:
@@ -533,7 +532,7 @@ def gpu_usage(resources: Dict[str, Dict]) -> Dict[str, Dict]:
 
 
 @beartype
-def in_use(resources: Dict[str, Dict] = None):
+def in_use(resources: dict = None):
     """Print a short summary of the resources that are currently used by each user.
 
     Args:
@@ -554,8 +553,8 @@ def in_use(resources: Dict[str, Dict] = None):
 
 @beartype
 def available(
-        resources: Dict[str, Dict] = None,
-        states: Dict[str, str] = None,
+        resources: dict = None,
+        states: dict= None,
         verbose: bool = False,
 ):
     """Print a short summary of resources available on the cluster.
