@@ -3,3 +3,4 @@
 dist
 slurm_gpustat.egg-info
 build
+.coverage

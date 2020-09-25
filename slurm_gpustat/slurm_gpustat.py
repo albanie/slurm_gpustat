@@ -381,7 +381,13 @@ def occupancy_stats_for_node(node: str) -> Dict[str, int]:
             if row.startswith(key):
                 row = row.replace(f"{key}=", "")
                 tokens = row.split(",")
-                metrics[key] = {x.split("=")[0]: x.split("=")[1] for x in tokens}
+                if tokens == [""]:
+                    # SLURM sometimes omits information, so we alert the user to its
+                    # its exclusion and report nothing for this node
+                    print(f"Missing information for {node}: {key}, skipping....")
+                    metrics[key] = {}
+                else:
+                    metrics[key] = {x.split("=")[0]: x.split("=")[1] for x in tokens}
     occupancy = {}
     for metric, alloc_val in metrics["AllocTRES"].items():
         cfg_val = metrics["CfgTRES"][metric]
@@ -410,6 +416,7 @@ def parse_all_gpus(default_gpus: int = 4) -> Dict[str, List]:
                 continue
             tokens = resource_str.strip().split(":")
             # if the number of GPUs is not specified, we assume it is `default_gpus`
+            import ipdb; ipdb.set_trace()
             if tokens[2] == "":
                 tokens[2] = default_gpus
             gpu_type, gpu_count = tokens[1], int(tokens[2])

@@ -1,3 +1,8 @@
+"""
+Commands to upload:
+python3 setup.py sdist bdist_wheel
+twine upload --skip-existing dist/*
+"""
 import setuptools
 
 
@@ -7,7 +12,7 @@ with open("README.md", "r") as f:
 
 setuptools.setup(
     name="slurm_gpustat",
-    version="0.0.3.9",
+    version="0.0.4",
     entry_points={
         "console_scripts": [
             "slurm_gpustat=slurm_gpustat.slurm_gpustat:main",
