@@ -95,3 +95,6 @@ total > avg: 3
 
 * `Python >= 3.6`
 * `numpy`
+* `beartype`
+* `seboarn`
+* `colored`

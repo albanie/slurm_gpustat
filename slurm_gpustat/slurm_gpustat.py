@@ -24,7 +24,7 @@ import colored
 import numpy as np
 import seaborn as sns
 
-from zsvision.zs_beartype import beartype
+from beartype import beartype
 
 # SLURM states which indicate that the node is not available for submitting jobs
 INACCESSIBLE = {"drain*", "down*", "drng", "drain", "down"}
