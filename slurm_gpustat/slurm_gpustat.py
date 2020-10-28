@@ -330,17 +330,20 @@ def parse_node_names(node_str):
     return names
 
 
-def parse_cmd(cmd):
-    """Parse the output of a shell command into a list of strings, one per line of output.
+def parse_cmd(cmd, split=True):
+    """Parse the output of a shell command...
+     and if split set to true: split into a list of strings, one per line of output.
 
     Args:
         cmd (str): the shell command to be executed.
-
+        split (bool): whether to split the output per line
     Returns:
         (list[str]): the strings from each output line.
     """
     output = subprocess.check_output(cmd, shell=True).decode("utf-8")
-    return [x for x in output.split("\n") if x]
+    if split:
+        output = [x for x in output.split("\n") if x]
+    return output
 
 
 @beartype
@@ -493,21 +496,26 @@ def gpu_usage(resources: dict) -> dict:
     Returns:
         (dict): a summary of resources organised by user (and also by node name).
     """
-    cmd = "squeue -O tres-per-node,nodelist,username --noheader"
+    cmd = "squeue -O tres-per-node,nodelist,username,jobid --noheader"
+    detailed_job_cmd = "scontrol show jobid -dd %s"
     rows = parse_cmd(cmd)
     usage = defaultdict(dict)
     for row in rows:
         tokens = row.split()
         # ignore pending jobs
-        if len(tokens) < 3 or not tokens[0].startswith("gpu"):
+        if len(tokens) < 4 or not tokens[0].startswith("gpu"):
             continue
-        gpu_count_str, node_str, user = tokens
+        gpu_count_str, node_str, user, jobid = tokens
         gpu_count_tokens = gpu_count_str.split(":")
         num_gpus = int(gpu_count_tokens[-1])
         if len(gpu_count_tokens) == 2:
             gpu_type = None
         elif len(gpu_count_tokens) == 3:
             gpu_type = gpu_count_tokens[1]
+        # get detailed job information, to check if using bash
+        detailed_output = parse_cmd(detailed_job_cmd % jobid, split=False)
+        is_bash = 'Command=bash\n' in detailed_output  # not the most robust check, ok for now...
+        num_bash_gpus = num_gpus * is_bash
         node_names = parse_node_names(node_str)
         for node_name in node_names:
             # If a node still has jobs running but is draining, it will not be present
@@ -524,10 +532,14 @@ def gpu_usage(resources: dict) -> dict:
                 else:
                     gpu_type = node_gpu_types[0]
             if gpu_type in usage[user]:
-                usage[user][gpu_type][node_name] += num_gpus
+                usage[user][gpu_type][node_name]['n_gpu'] += num_gpus
+                usage[user][gpu_type][node_name]['bash_gpu'] += num_bash_gpus
+
             else:
-                usage[user][gpu_type] = defaultdict(lambda: 0)
-                usage[user][gpu_type][node_name] += num_gpus
+                usage[user][gpu_type] = defaultdict(lambda: {'n_gpu': 0, 'bash_gpu': 0})
+                usage[user][gpu_type][node_name]['n_gpu'] += num_gpus
+                usage[user][gpu_type][node_name]['bash_gpu'] += num_bash_gpus
+
     return usage
 
 
@@ -543,18 +555,21 @@ def in_use(resources: dict = None):
     usage = gpu_usage(resources)
     aggregates = {}
     for user, subdict in usage.items():
-        aggregates[user] = {key: sum(val.values()) for key, val in subdict.items()}
+        aggregates[user] = {}
+        aggregates[user]['n_gpu'] = {key: sum([x['n_gpu'] for x in val.values()]) for key, val in subdict.items()}
+        aggregates[user]['bash_gpu'] = {key: sum([x['bash_gpu'] for x in val.values()]) for key, val in
+                                        subdict.items()}
     print("Usage by user:")
-    for user, subdict in sorted(aggregates.items(), key=lambda x: sum(x[1].values())):
-        total = f"total: {str(sum(subdict.values())):2s}"
-        summary_str = ", ".join([f"{key}: {val}" for key, val in subdict.items()])
+    for user, subdict in sorted(aggregates.items(), key=lambda x: sum(x[1]['n_gpu'].values())):
+        total = f"total: {str(sum(subdict['n_gpu'].values())):2s}, bash: {str(sum(subdict['bash_gpu'].values())):2s}"
+        summary_str = ", ".join([f"{key}: {val}" for key, val in subdict['n_gpu'].items()])
         print(f"{user:10s} [{total}] {summary_str}")
 
 
 @beartype
 def available(
         resources: dict = None,
-        states: dict= None,
+        states: dict = None,
         verbose: bool = False,
 ):
     """Print a short summary of resources available on the cluster.
@@ -582,7 +597,7 @@ def available(
             for node_name, user_gpu_count in node_dicts.items():
                 resource_idx = [x["type"] for x in res[node_name]].index(gpu_type)
                 count = res[node_name][resource_idx]["count"]
-                count = max(count - user_gpu_count, 0)
+                count = max(count - user_gpu_count['n_gpu'], 0)
                 res[node_name][resource_idx]["count"] = count
     by_type = resource_by_type(res)
     total = sum(x["count"] for sublist in by_type.values() for x in sublist)
