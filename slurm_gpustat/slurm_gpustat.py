@@ -556,14 +556,17 @@ def in_use(resources: dict = None):
     aggregates = {}
     for user, subdict in usage.items():
         aggregates[user] = {}
-        aggregates[user]['n_gpu'] = {key: sum([x['n_gpu'] for x in val.values()]) for key, val in subdict.items()}
-        aggregates[user]['bash_gpu'] = {key: sum([x['bash_gpu'] for x in val.values()]) for key, val in
-                                        subdict.items()}
+        aggregates[user]['n_gpu'] = {key: sum([x['n_gpu'] for x in val.values()])
+                                     for key, val in subdict.items()}
+        aggregates[user]['bash_gpu'] = {key: sum([x['bash_gpu'] for x in val.values()])
+                                        for key, val in subdict.items()}
     print("Usage by user:")
-    for user, subdict in sorted(aggregates.items(), key=lambda x: sum(x[1]['n_gpu'].values())):
-        total = f"total: {str(sum(subdict['n_gpu'].values())):2s}, bash: {str(sum(subdict['bash_gpu'].values())):2s}"
-        summary_str = ", ".join([f"{key}: {val}" for key, val in subdict['n_gpu'].items()])
-        print(f"{user:10s} [{total}] {summary_str}")
+    for user, subdict in sorted(aggregates.items(),
+                                key=lambda x: sum(x[1]['n_gpu'].values())):
+        total = (f"total: {str(sum(subdict['n_gpu'].values())):2s} "
+                 f"(interactive: {str(sum(subdict['bash_gpu'].values())):2s})")
+        summary = ", ".join([f"{key}: {val}" for key, val in subdict['n_gpu'].items()])
+        print(f"{user:10s} [{total}] {summary}")
 
 
 @beartype
