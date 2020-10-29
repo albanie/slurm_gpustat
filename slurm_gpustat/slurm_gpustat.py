@@ -28,7 +28,7 @@ from beartype import beartype
 
 # SLURM states which indicate that the node is not available for submitting jobs
 INACCESSIBLE = {"drain*", "down*", "drng", "drain", "down"}
-
+INTERACTIVE_CMDS = {"bash", "zsh", "sh"}
 
 class Daemon:
     """A Generic linux daemon base class for python 3.x.
@@ -514,7 +514,7 @@ def gpu_usage(resources: dict) -> dict:
             gpu_type = gpu_count_tokens[1]
         # get detailed job information, to check if using bash
         detailed_output = parse_cmd(detailed_job_cmd % jobid, split=False)
-        is_bash = 'Command=bash\n' in detailed_output  # not the most robust check, ok for now...
+        is_bash = any([f'Command={x}\n' in detailed_output for x in INTERACTIVE_CMDS])
         num_bash_gpus = num_gpus * is_bash
         node_names = parse_node_names(node_str)
         for node_name in node_names:
