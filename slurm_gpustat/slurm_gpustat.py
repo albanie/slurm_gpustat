@@ -409,7 +409,7 @@ def parse_all_gpus(default_gpus: int = 4) -> dict:
     Returns:
         a mapping between node names and a list of the GPUs that they have available.
     """
-    cmd = "sinfo -o '%50N|%30G' --noheader"
+    cmd = "sinfo -o '%1000N|%30G' --noheader"
     rows = parse_cmd(cmd)
     resources = defaultdict(list)
     for row in rows:
@@ -421,7 +421,7 @@ def parse_all_gpus(default_gpus: int = 4) -> dict:
             # if the number of GPUs is not specified, we assume it is `default_gpus`
             if tokens[2] == "":
                 tokens[2] = default_gpus
-            gpu_type, gpu_count = tokens[1], int(tokens[2])
+            gpu_type, gpu_count = tokens[1], int(tokens[-2].split('(')[0])
             node_names = parse_node_names(node_str)
             for name in node_names:
                 resources[name].append({"type": gpu_type, "count": gpu_count})
@@ -496,7 +496,7 @@ def gpu_usage(resources: dict) -> dict:
     Returns:
         (dict): a summary of resources organised by user (and also by node name).
     """
-    cmd = "squeue -O tres-per-node,nodelist,username,jobid --noheader"
+    cmd = "squeue -O tres-per-node,username,jobid,nodelist:30 --noheader"
     detailed_job_cmd = "scontrol show jobid -dd %s"
     rows = parse_cmd(cmd)
     usage = defaultdict(dict)
@@ -505,7 +505,7 @@ def gpu_usage(resources: dict) -> dict:
         # ignore pending jobs
         if len(tokens) < 4 or not tokens[0].startswith("gpu"):
             continue
-        gpu_count_str, node_str, user, jobid = tokens
+        gpu_count_str, user, jobid, node_str = tokens
         gpu_count_tokens = gpu_count_str.split(":")
         num_gpus = int(gpu_count_tokens[-1])
         if len(gpu_count_tokens) == 2:
