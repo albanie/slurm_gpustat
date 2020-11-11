@@ -496,7 +496,7 @@ def gpu_usage(resources: dict) -> dict:
     Returns:
         (dict): a summary of resources organised by user (and also by node name).
     """
-    cmd = "squeue -O tres-per-node,username,jobid,nodelist:30 --noheader"
+    cmd = "squeue -O tres-per-node,nodelist:30,username,jobid --noheader"
     detailed_job_cmd = "scontrol show jobid -dd %s"
     rows = parse_cmd(cmd)
     usage = defaultdict(dict)
@@ -505,7 +505,7 @@ def gpu_usage(resources: dict) -> dict:
         # ignore pending jobs
         if len(tokens) < 4 or not tokens[0].startswith("gpu"):
             continue
-        gpu_count_str, user, jobid, node_str = tokens
+        gpu_count_str, node_str, user, jobid = tokens
         gpu_count_tokens = gpu_count_str.split(":")
         num_gpus = int(gpu_count_tokens[-1])
         if len(gpu_count_tokens) == 2:
