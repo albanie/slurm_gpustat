@@ -496,7 +496,7 @@ def gpu_usage(resources: dict) -> dict:
     Returns:
         (dict): a summary of resources organised by user (and also by node name).
     """
-    cmd = "squeue -O tres-per-node,nodelist:30,username,jobid --noheader"
+    cmd = "squeue -O tres-per-node,nodelist:100,username,jobid --noheader"
     detailed_job_cmd = "scontrol show jobid -dd %s"
     rows = parse_cmd(cmd)
     usage = defaultdict(dict)
