@@ -26,6 +26,7 @@ import numpy as np
 import seaborn as sns
 
 from beartype import beartype
+from beartype.cave import NoneType
 
 # SLURM states which indicate that the node is not available for submitting jobs
 INACCESSIBLE = {"drain*", "down*", "drng", "drain", "down"}
@@ -348,13 +349,19 @@ def parse_cmd(cmd, split=True):
 
 
 @beartype
-def node_states() -> dict:
+def node_states(partition: (str, NoneType) = None) -> dict:
     """Query SLURM for the state of each managed node.
+
+    Args:
+        partition: the partition/queue (or multiple, comma separated) of interest.
+            By default None, which queries all available partitions.
 
     Returns:
         a mapping between node names and SLURM states.
     """
     cmd = "sinfo --noheader"
+    if partition:
+        cmd += f" --partition={partition}"
     rows = parse_cmd(cmd)
     states = {}
     for row in rows:
@@ -400,17 +407,25 @@ def occupancy_stats_for_node(node: str) -> dict:
 
 
 @beartype
-def parse_all_gpus(default_gpus: int = 4, default_gpu_name: str = "NONAME_GPU") -> dict:
+def parse_all_gpus(partition: (str, NoneType) = None,
+                   default_gpus: int = 4,
+                   default_gpu_name: str = "NONAME_GPU") -> dict:
     """Query SLURM for the number and types of GPUs under management.
 
     Args:
+        partition: the partition/queue (or multiple, comma separated) of interest.
+            By default None, which queries all available partitions.
         default_gpus: The number of GPUs estimated for nodes that have incomplete SLURM
             meta data.
+        default_gpu_name: The name of the GPU for nodes that have incomplete SLURM meta
+        data.
 
     Returns:
         a mapping between node names and a list of the GPUs that they have available.
     """
     cmd = "sinfo -o '%1000N|%30G' --noheader"
+    if partition:
+        cmd += f" --partition={partition}"
     rows = parse_cmd(cmd)
     resources = defaultdict(list)
     for row in rows:
@@ -626,10 +641,14 @@ def available(
 
 
 @beartype
-def all_info(color: int, verbose: bool):
+def all_info(color: int, verbose: bool, partition: (str, NoneType) = None):
     """Print a collection of summaries about SLURM gpu usage, including: all nodes
     managed by the cluster, nodes that are currently accesible and gpu usage for each
     active user.
+
+    Args:
+        partition: the partition/queue (or multiple, comma separated) of interest.
+            By default None, which queries all available partitions.
     """
     divider, slurm_str = "---------------------------------", "SLURM"
     if color:
@@ -639,8 +658,8 @@ def all_info(color: int, verbose: bool):
     print(divider)
     print(f"Under {slurm_str} management")
     print(divider)
-    resources = parse_all_gpus()
-    states = node_states()
+    resources = parse_all_gpus(partition=partition)
+    states = node_states(partition=partition)
     for mode in ("up", "accessible"):
         summary(mode=mode, resources=resources, states=states)
         print(divider)
@@ -659,6 +678,9 @@ def main():
                               "provide statistics from historical data (provided that the"
                               "logging daemon has been running). 'daemon-start' and"
                               "'daemon-stop' will start and stop the daemon, resp."))
+    parser.add_argument("--partition", default=None,
+                        help="the partition/queue (or multiple, comma separated) of interest. "
+                             "By default set to all available partitions.")
     parser.add_argument("--log_path",
                         default=Path.home() / "data/daemons/logs/slurm_gpustat.log",
                         help="the location where daemon log files will be stored")
@@ -673,7 +695,7 @@ def main():
     args = parser.parse_args()
 
     if args.action == "current":
-        all_info(color=args.color, verbose=args.verbose)
+        all_info(color=args.color, verbose=args.verbose, partition=args.partition)
     elif args.action == "history":
         data = GPUStatDaemon.deserialize_usage(args.log_path)
         historical_summary(data)
