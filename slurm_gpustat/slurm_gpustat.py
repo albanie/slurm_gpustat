@@ -678,7 +678,7 @@ def main():
                               "provide statistics from historical data (provided that the"
                               "logging daemon has been running). 'daemon-start' and"
                               "'daemon-stop' will start and stop the daemon, resp."))
-    parser.add_argument("--partition", default=None,
+    parser.add_argument("-p", "--partition", default=None,
                         help="the partition/queue (or multiple, comma separated) of interest. "
                              "By default set to all available partitions.")
     parser.add_argument("--log_path",
