@@ -10,6 +10,7 @@ import ast
 import atexit
 import os
 import random
+import re
 import signal
 import subprocess
 import sys
@@ -399,7 +400,7 @@ def occupancy_stats_for_node(node: str) -> dict:
 
 
 @beartype
-def parse_all_gpus(default_gpus: int = 4) -> dict:
+def parse_all_gpus(default_gpus: int = 4, default_gpu_name: str = "NONAME_GPU") -> dict:
     """Query SLURM for the number and types of GPUs under management.
 
     Args:
@@ -417,11 +418,13 @@ def parse_all_gpus(default_gpus: int = 4) -> dict:
         for resource_str in resource_strs.split(","):
             if not resource_str.startswith("gpu"):
                 continue
-            tokens = resource_str.strip().split(":")
+            # Debug the regular expression below at
+            # https://regex101.com/r/RHYM8Z/3
+            p = re.compile(r'gpu:(?:(\w*):)?(\d*)(?:\(\S*\))?\s*')
+            match = p.search(resource_str)
+            gpu_type = match.group(1) if match.group(1) is not None else default_gpu_name
             # if the number of GPUs is not specified, we assume it is `default_gpus`
-            if tokens[2] == "":
-                tokens[2] = default_gpus
-            gpu_type, gpu_count = tokens[1], int(tokens[-2].split('(')[0])
+            gpu_count = int(match.group(2)) if match.group(2) != "" else default_gpus
             node_names = parse_node_names(node_str)
             for name in node_names:
                 resources[name].append({"type": gpu_type, "count": gpu_count})
