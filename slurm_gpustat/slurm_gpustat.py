@@ -423,7 +423,7 @@ def parse_all_gpus(partition: (str, NoneType) = None,
     Returns:
         a mapping between node names and a list of the GPUs that they have available.
     """
-    cmd = "sinfo -o '%1000N|%30G' --noheader"
+    cmd = "sinfo -o '%1000N|%1000G' --noheader"
     if partition:
         cmd += f" --partition={partition}"
     rows = parse_cmd(cmd)
@@ -505,7 +505,7 @@ def summary(mode: str, resources: dict = None, states: dict = None):
 
 
 @beartype
-def gpu_usage(resources: dict) -> dict:
+def gpu_usage(resources: dict, partition: (str, NoneType) = None) -> dict:
     """Build a data structure of the cluster resource usage, organised by user.
 
     Args:
@@ -514,7 +514,9 @@ def gpu_usage(resources: dict) -> dict:
     Returns:
         (dict): a summary of resources organised by user (and also by node name).
     """
-    cmd = "squeue -O tres-per-node,nodelist:100,username,jobid --noheader"
+    cmd = "squeue -O tres-per-node:100,nodelist:100,username:100,jobid:100 --noheader"
+    if partition:
+        cmd += f" --partition={partition}"
     detailed_job_cmd = "scontrol show jobid -dd %s"
     rows = parse_cmd(cmd)
     usage = defaultdict(dict)
@@ -562,7 +564,7 @@ def gpu_usage(resources: dict) -> dict:
 
 
 @beartype
-def in_use(resources: dict = None):
+def in_use(resources: dict = None, partition: (str, NoneType) = None):
     """Print a short summary of the resources that are currently used by each user.
 
     Args:
@@ -570,7 +572,7 @@ def in_use(resources: dict = None):
     """
     if not resources:
         resources = parse_all_gpus()
-    usage = gpu_usage(resources)
+    usage = gpu_usage(resources, partition=partition)
     aggregates = {}
     for user, subdict in usage.items():
         aggregates[user] = {}
@@ -663,7 +665,7 @@ def all_info(color: int, verbose: bool, partition: (str, NoneType) = None):
     for mode in ("up", "accessible"):
         summary(mode=mode, resources=resources, states=states)
         print(divider)
-    in_use(resources)
+    in_use(resources, partition=partition)
     print(divider)
     available(resources=resources, states=states, verbose=verbose)
     print(divider)
