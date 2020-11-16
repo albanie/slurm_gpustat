@@ -428,14 +428,16 @@ def parse_all_gpus(partition: (str, NoneType) = None,
         cmd += f" --partition={partition}"
     rows = parse_cmd(cmd)
     resources = defaultdict(list)
+
+    # Debug the regular expression below at
+    # https://regex101.com/r/RHYM8Z/3
+    p = re.compile(r'gpu:(?:(\w*):)?(\d*)(?:\(\S*\))?\s*')
+
     for row in rows:
         node_str, resource_strs = row.split("|")
         for resource_str in resource_strs.split(","):
             if not resource_str.startswith("gpu"):
                 continue
-            # Debug the regular expression below at
-            # https://regex101.com/r/RHYM8Z/3
-            p = re.compile(r'gpu:(?:(\w*):)?(\d*)(?:\(\S*\))?\s*')
             match = p.search(resource_str)
             gpu_type = match.group(1) if match.group(1) is not None else default_gpu_name
             # if the number of GPUs is not specified, we assume it is `default_gpus`
