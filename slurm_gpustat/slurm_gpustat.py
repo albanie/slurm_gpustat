@@ -547,9 +547,9 @@ def gpu_usage(resources: dict, partition: (str, NoneType) = None) -> dict:
             node_gpu_types = [x["type"] for x in resources[node_name]]
             if gpu_type is None:
                 if len(node_gpu_types) != 1:
-                    gpu_type = random.choice(node_gpu_types)
+                    gpu_type = sorted(resources[node_name], key=lambda k: k['count'], reverse=True)[0]['type']
                     msg = (f"cannot determine node gpu type for {user} on {node_name}"
-                           f" (guesssing {gpu_type})")
+                           f" (guessing {gpu_type})")
                     print(f"WARNING >>> {msg}")
                 else:
                     gpu_type = node_gpu_types[0]
