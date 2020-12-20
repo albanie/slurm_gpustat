@@ -5,32 +5,33 @@ The tool can be used in two ways:
 2. To launch a daemon which will log usage over time.  This can then later be queried
    to provide simple usage statistics.
 """
-import argparse
-import ast
-import atexit
 import os
-import random
 import re
-import signal
-import subprocess
+import ast
 import sys
 import time
-from collections import defaultdict
-from datetime import datetime
-from pathlib import Path
-from typing import Dict, List
+import atexit
+import signal
+import argparse
 import functools
+import subprocess
+import humanize
+import humanfriendly as hf
+from pathlib import Path
+from datetime import datetime
+from collections import defaultdict
 
-import colored
 import numpy as np
+import colored
 import seaborn as sns
-
 from beartype import beartype
 from beartype.cave import NoneType
+
 
 # SLURM states which indicate that the node is not available for submitting jobs
 INACCESSIBLE = {"drain*", "down*", "drng", "drain", "down"}
 INTERACTIVE_CMDS = {"bash", "zsh", "sh"}
+
 
 class Daemon:
     """A Generic linux daemon base class for python 3.x.
@@ -207,7 +208,7 @@ class GPUStatDaemon(Daemon):
                 themselves.
         """
         if not Path(log_path).exists():
-            raise ValueError(f"No historical log found.  Did you start the daemon?")
+            raise ValueError("No historical log found.  Did you start the daemon?")
         with open(log_path, "r") as f:
             rows = f.read().splitlines()
         data = []
@@ -402,6 +403,13 @@ def occupancy_stats_for_node(node: str) -> dict:
     occupancy = {}
     for metric, alloc_val in metrics["AllocTRES"].items():
         cfg_val = metrics["CfgTRES"][metric]
+        if metric == "mem":
+            # SLURM appears to sometimes misformat large numbers, producing summary strings
+            # like 68G/257669M, rather than 68G/258G. The humanfriendly library provides
+            # a more reliable number parser, and the humanize library provides a nice
+            # formatter.
+            alloc_val = humanize.naturalsize(hf.parse_size(alloc_val), format="%d")
+            cfg_val = humanize.naturalsize(hf.parse_size(cfg_val), format="%d")
         occupancy[metric] = f"{alloc_val}/{cfg_val}"
     return occupancy
 
@@ -547,7 +555,11 @@ def gpu_usage(resources: dict, partition: (str, NoneType) = None) -> dict:
             node_gpu_types = [x["type"] for x in resources[node_name]]
             if gpu_type is None:
                 if len(node_gpu_types) != 1:
-                    gpu_type = sorted(resources[node_name], key=lambda k: k['count'], reverse=True)[0]['type']
+                    gpu_type = sorted(
+                        resources[node_name],
+                        key=lambda k: k['count'],
+                        reverse=True
+                    )[0]['type']
                     msg = (f"cannot determine node gpu type for {user} on {node_name}"
                            f" (guessing {gpu_type})")
                     print(f"WARNING >>> {msg}")
@@ -587,8 +599,8 @@ def in_use(resources: dict = None, partition: (str, NoneType) = None):
                                 key=lambda x: sum(x[1]['n_gpu'].values())):
         total = (f"total: {str(sum(subdict['n_gpu'].values())):2s} "
                  f"(interactive: {str(sum(subdict['bash_gpu'].values())):2s})")
-        summary = ", ".join([f"{key}: {val}" for key, val in subdict['n_gpu'].items()])
-        print(f"{user:10s} [{total}] {summary}")
+        summary_str = ", ".join([f"{key}: {val}" for key, val in subdict['n_gpu'].items()])
+        print(f"{user:10s} [{total}] {summary_str}")
 
 
 @beartype
@@ -602,6 +614,7 @@ def available(
     Args:
         resources: a summary of cluster resources, organised by node name.
         states: a mapping between node names and SLURM states.
+        verbose: whether to output a more verbose summary of the cluster state.
 
     NOTES: Some systems allow users to share GPUs.  The logic below amounts to a
     conservative estimate of how many GPUs are available.  The algorithm is:
@@ -631,7 +644,7 @@ def available(
         gpu_count = sum(x["count"] for x in counts_for_gpu_type)
         tail = ""
         if verbose:
-            summary = []
+            summary_strs = []
             for x in counts_for_gpu_type:
                 node, count = x["node"], x["count"]
                 if count:
@@ -639,8 +652,8 @@ def available(
                     users = [user for user in usage if node in usage[user].get(key, [])]
                     details = [f"{key}: {val}" for key, val in sorted(occupancy.items())]
                     details = f"[{', '.join(details)}] [{','.join(users)}]"
-                    summary.append(f"\n -> {node}: {count} {key} {details}")
-            tail = " ".join(summary)
+                    summary_strs.append(f"\n -> {node}: {count} {key} {details}")
+            tail = " ".join(summary_strs)
         print(f"{key}: {gpu_count} available {tail}")
 
 
@@ -683,8 +696,8 @@ def main():
                               "logging daemon has been running). 'daemon-start' and"
                               "'daemon-stop' will start and stop the daemon, resp."))
     parser.add_argument("-p", "--partition", default=None,
-                        help="the partition/queue (or multiple, comma separated) of interest. "
-                             "By default set to all available partitions.")
+                        help=("the partition/queue (or multiple, comma separated) of"
+                              " interest. By default set to all available partitions."))
     parser.add_argument("--log_path",
                         default=Path.home() / "data/daemons/logs/slurm_gpustat.log",
                         help="the location where daemon log files will be stored")
