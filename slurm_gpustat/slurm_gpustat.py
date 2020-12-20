@@ -10,6 +10,7 @@ import ast
 import atexit
 import os
 import random
+import re
 import signal
 import subprocess
 import sys
@@ -25,6 +26,7 @@ import numpy as np
 import seaborn as sns
 
 from beartype import beartype
+from beartype.cave import NoneType
 
 # SLURM states which indicate that the node is not available for submitting jobs
 INACCESSIBLE = {"drain*", "down*", "drng", "drain", "down"}
@@ -347,13 +349,19 @@ def parse_cmd(cmd, split=True):
 
 
 @beartype
-def node_states() -> dict:
+def node_states(partition: (str, NoneType) = None) -> dict:
     """Query SLURM for the state of each managed node.
+
+    Args:
+        partition: the partition/queue (or multiple, comma separated) of interest.
+            By default None, which queries all available partitions.
 
     Returns:
         a mapping between node names and SLURM states.
     """
     cmd = "sinfo --noheader"
+    if partition:
+        cmd += f" --partition={partition}"
     rows = parse_cmd(cmd)
     states = {}
     for row in rows:
@@ -399,29 +407,41 @@ def occupancy_stats_for_node(node: str) -> dict:
 
 
 @beartype
-def parse_all_gpus(default_gpus: int = 4) -> dict:
+def parse_all_gpus(partition: (str, NoneType) = None,
+                   default_gpus: int = 4,
+                   default_gpu_name: str = "NONAME_GPU") -> dict:
     """Query SLURM for the number and types of GPUs under management.
 
     Args:
+        partition: the partition/queue (or multiple, comma separated) of interest.
+            By default None, which queries all available partitions.
         default_gpus: The number of GPUs estimated for nodes that have incomplete SLURM
             meta data.
+        default_gpu_name: The name of the GPU for nodes that have incomplete SLURM meta
+        data.
 
     Returns:
         a mapping between node names and a list of the GPUs that they have available.
     """
-    cmd = "sinfo -o '%50N|%30G' --noheader"
+    cmd = "sinfo -o '%1000N|%1000G' --noheader"
+    if partition:
+        cmd += f" --partition={partition}"
     rows = parse_cmd(cmd)
     resources = defaultdict(list)
+
+    # Debug the regular expression below at
+    # https://regex101.com/r/RHYM8Z/3
+    p = re.compile(r'gpu:(?:(\w*):)?(\d*)(?:\(\S*\))?\s*')
+
     for row in rows:
         node_str, resource_strs = row.split("|")
         for resource_str in resource_strs.split(","):
             if not resource_str.startswith("gpu"):
                 continue
-            tokens = resource_str.strip().split(":")
+            match = p.search(resource_str)
+            gpu_type = match.group(1) if match.group(1) is not None else default_gpu_name
             # if the number of GPUs is not specified, we assume it is `default_gpus`
-            if tokens[2] == "":
-                tokens[2] = default_gpus
-            gpu_type, gpu_count = tokens[1], int(tokens[2])
+            gpu_count = int(match.group(2)) if match.group(2) != "" else default_gpus
             node_names = parse_node_names(node_str)
             for name in node_names:
                 resources[name].append({"type": gpu_type, "count": gpu_count})
@@ -487,7 +507,7 @@ def summary(mode: str, resources: dict = None, states: dict = None):
 
 
 @beartype
-def gpu_usage(resources: dict) -> dict:
+def gpu_usage(resources: dict, partition: (str, NoneType) = None) -> dict:
     """Build a data structure of the cluster resource usage, organised by user.
 
     Args:
@@ -496,7 +516,9 @@ def gpu_usage(resources: dict) -> dict:
     Returns:
         (dict): a summary of resources organised by user (and also by node name).
     """
-    cmd = "squeue -O tres-per-node,nodelist,username,jobid --noheader"
+    cmd = "squeue -O tres-per-node:100,nodelist:100,username:100,jobid:100 --noheader"
+    if partition:
+        cmd += f" --partition={partition}"
     detailed_job_cmd = "scontrol show jobid -dd %s"
     rows = parse_cmd(cmd)
     usage = defaultdict(dict)
@@ -525,9 +547,9 @@ def gpu_usage(resources: dict) -> dict:
             node_gpu_types = [x["type"] for x in resources[node_name]]
             if gpu_type is None:
                 if len(node_gpu_types) != 1:
-                    gpu_type = random.choice(node_gpu_types)
+                    gpu_type = sorted(resources[node_name], key=lambda k: k['count'], reverse=True)[0]['type']
                     msg = (f"cannot determine node gpu type for {user} on {node_name}"
-                           f" (guesssing {gpu_type})")
+                           f" (guessing {gpu_type})")
                     print(f"WARNING >>> {msg}")
                 else:
                     gpu_type = node_gpu_types[0]
@@ -544,7 +566,7 @@ def gpu_usage(resources: dict) -> dict:
 
 
 @beartype
-def in_use(resources: dict = None):
+def in_use(resources: dict = None, partition: (str, NoneType) = None):
     """Print a short summary of the resources that are currently used by each user.
 
     Args:
@@ -552,7 +574,7 @@ def in_use(resources: dict = None):
     """
     if not resources:
         resources = parse_all_gpus()
-    usage = gpu_usage(resources)
+    usage = gpu_usage(resources, partition=partition)
     aggregates = {}
     for user, subdict in usage.items():
         aggregates[user] = {}
@@ -623,10 +645,14 @@ def available(
 
 
 @beartype
-def all_info(color: int, verbose: bool):
+def all_info(color: int, verbose: bool, partition: (str, NoneType) = None):
     """Print a collection of summaries about SLURM gpu usage, including: all nodes
     managed by the cluster, nodes that are currently accesible and gpu usage for each
     active user.
+
+    Args:
+        partition: the partition/queue (or multiple, comma separated) of interest.
+            By default None, which queries all available partitions.
     """
     divider, slurm_str = "---------------------------------", "SLURM"
     if color:
@@ -636,12 +662,12 @@ def all_info(color: int, verbose: bool):
     print(divider)
     print(f"Under {slurm_str} management")
     print(divider)
-    resources = parse_all_gpus()
-    states = node_states()
+    resources = parse_all_gpus(partition=partition)
+    states = node_states(partition=partition)
     for mode in ("up", "accessible"):
         summary(mode=mode, resources=resources, states=states)
         print(divider)
-    in_use(resources)
+    in_use(resources, partition=partition)
     print(divider)
     available(resources=resources, states=states, verbose=verbose)
     print(divider)
@@ -656,6 +682,9 @@ def main():
                               "provide statistics from historical data (provided that the"
                               "logging daemon has been running). 'daemon-start' and"
                               "'daemon-stop' will start and stop the daemon, resp."))
+    parser.add_argument("-p", "--partition", default=None,
+                        help="the partition/queue (or multiple, comma separated) of interest. "
+                             "By default set to all available partitions.")
     parser.add_argument("--log_path",
                         default=Path.home() / "data/daemons/logs/slurm_gpustat.log",
                         help="the location where daemon log files will be stored")
@@ -670,7 +699,7 @@ def main():
     args = parser.parse_args()
 
     if args.action == "current":
-        all_info(color=args.color, verbose=args.verbose)
+        all_info(color=args.color, verbose=args.verbose, partition=args.partition)
     elif args.action == "history":
         data = GPUStatDaemon.deserialize_usage(args.log_path)
         historical_summary(data)

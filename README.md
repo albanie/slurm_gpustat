@@ -15,6 +15,10 @@ To print a summary of current activity:
 
 `slurm_gpustat`
 
+To print a summary of current activity on particular partitions, e.g. `debug` & `normal`:
+
+`slurm_gpustat -p debug,normal` or `slurm_gpustat --partition debug,normal`
+
 To start the logging dameon:
 
 `slurm_gpustat --action daemon-start`
