@@ -538,10 +538,6 @@ def gpu_usage(resources: dict, partition: (str, NoneType) = None) -> dict:
         gpu_count_str, node_str, user, jobid = tokens
         gpu_count_tokens = gpu_count_str.split(":")
         num_gpus = int(gpu_count_tokens[-1])
-        if len(gpu_count_tokens) == 2:
-            gpu_type = None
-        elif len(gpu_count_tokens) == 3:
-            gpu_type = gpu_count_tokens[1]
         # get detailed job information, to check if using bash
         detailed_output = parse_cmd(detailed_job_cmd % jobid, split=False)
         is_bash = any([f'Command={x}\n' in detailed_output for x in INTERACTIVE_CMDS])
@@ -553,6 +549,10 @@ def gpu_usage(resources: dict, partition: (str, NoneType) = None) -> dict:
             if node_name not in resources:
                 continue
             node_gpu_types = [x["type"] for x in resources[node_name]]
+            if len(gpu_count_tokens) == 2:
+                gpu_type = None
+            elif len(gpu_count_tokens) == 3:
+                gpu_type = gpu_count_tokens[1]
             if gpu_type is None:
                 if len(node_gpu_types) != 1:
                     gpu_type = sorted(
