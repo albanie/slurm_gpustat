@@ -373,7 +373,6 @@ def node_states(partition: (str, NoneType) = None) -> dict:
     return states
 
 
-@beartype
 @functools.lru_cache(maxsize=64, typed=True)
 def occupancy_stats_for_node(node: str) -> dict:
     """Query SLURM for the occupancy of a given node.
