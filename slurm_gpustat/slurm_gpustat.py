@@ -15,8 +15,7 @@ import signal
 import argparse
 import functools
 import subprocess
-import humanize
-import humanfriendly as hf
+from typing import Optional
 from pathlib import Path
 from datetime import datetime
 from collections import defaultdict
@@ -24,8 +23,9 @@ from collections import defaultdict
 import numpy as np
 import colored
 import seaborn as sns
+import humanize
+import humanfriendly as hf
 from beartype import beartype
-from beartype.cave import NoneType
 
 
 # SLURM states which indicate that the node is not available for submitting jobs
@@ -350,7 +350,7 @@ def parse_cmd(cmd, split=True):
 
 
 @beartype
-def node_states(partition: (str, NoneType) = None) -> dict:
+def node_states(partition: Optional[str] = None) -> dict:
     """Query SLURM for the state of each managed node.
 
     Args:
@@ -414,7 +414,7 @@ def occupancy_stats_for_node(node: str) -> dict:
 
 
 @beartype
-def parse_all_gpus(partition: (str, NoneType) = None,
+def parse_all_gpus(partition: Optional[str] = None,
                    default_gpus: int = 4,
                    default_gpu_name: str = "NONAME_GPU") -> dict:
     """Query SLURM for the number and types of GPUs under management.
@@ -514,7 +514,7 @@ def summary(mode: str, resources: dict = None, states: dict = None):
 
 
 @beartype
-def gpu_usage(resources: dict, partition: (str, NoneType) = None) -> dict:
+def gpu_usage(resources: dict, partition: Optional[str] = None) -> dict:
     """Build a data structure of the cluster resource usage, organised by user.
 
     Args:
@@ -577,7 +577,7 @@ def gpu_usage(resources: dict, partition: (str, NoneType) = None) -> dict:
 
 
 @beartype
-def in_use(resources: dict = None, partition: (str, NoneType) = None):
+def in_use(resources: dict = None, partition: Optional[str] = None):
     """Print a short summary of the resources that are currently used by each user.
 
     Args:
@@ -657,7 +657,7 @@ def available(
 
 
 @beartype
-def all_info(color: int, verbose: bool, partition: (str, NoneType) = None):
+def all_info(color: int, verbose: bool, partition: Optional[str] = None):
     """Print a collection of summaries about SLURM gpu usage, including: all nodes
     managed by the cluster, nodes that are currently accesible and gpu usage for each
     active user.
