@@ -1,4 +1,4 @@
- You’re making changes in a project you don’t have write access to. We’ve created a fork of this project for you to commit your proposed changes to. Submitting a change will write it to a new branch in your fork, so you can send a pull request. ## slurm_gpustat
+## slurm_gpustat
 
 `slurm_gpustat` is a simple command line utility that produces a summary of GPU usage on a slurm cluster. The tool can be used in two ways:
 1. To query the current usage of GPUs on the cluster.
