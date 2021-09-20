@@ -8,7 +8,7 @@
 
 ### Installation
 
-Install via `pip install slurm_gpustat`.  If you prefer to hack around with the source code, it's a [single python file](slurm_gpustat/slurm_gpustat.py).
+Install via `pip install git+https://github.com/yuhui-zh15/slurm_gpustat.git`.  If you prefer to hack around with the source code, it's a [single python file](slurm_gpustat/slurm_gpustat.py).
 
 
 ### Usage
