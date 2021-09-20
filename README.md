@@ -1,5 +1,7 @@
 ## slurm_gpustat
 
+**NOTE**: This tool is adapted from its [original implementation](https://github.com/albanie/slurm_gpustat) to support `SLURM 17`. 
+
 `slurm_gpustat` is a simple command line utility that produces a summary of GPU usage on a slurm cluster. The tool can be used in two ways:
 1. To query the current usage of GPUs on the cluster.
 2. To launch a daemon which will log usage over time.  This log can later be queried to provide usage statistics.
@@ -103,4 +105,3 @@ total > avg: 3
 * `seboarn`
 * `colored`
 
-**NOTE**: This tool has only been tested on `SLURM 18.08.7`. It is known to break on older versions, such as `17.11.2` as described [here](https://github.com/albanie/slurm_gpustat/issues/7) (I unfortunately don't have access to older SLURM versions to fix these issues).
