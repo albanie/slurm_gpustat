@@ -81,7 +81,7 @@ v100: 5 available
  -> gnodeg2: 3 v100 [cpu: 8/64, gres/gpu: 1/4, mem: 40G/191668M] [user2]
 ```
 
-Running `slurm_gpustat --history` (after the daemon has run for a little while) will produce something like this:
+Running `slurm_gpustat --action history` (after the daemon has run for a little while) will produce something like this:
 
 ```
 Historical data contains 7 samples (2020-01-03 11:51:43 to 2020-01-03 11:51:45)
@@ -100,7 +100,7 @@ total > avg: 3
 * `Python >= 3.6`
 * `numpy`
 * `beartype`
-* `seboarn`
+* `seaborn`
 * `colored`
 
 **NOTE**: This tool has only been tested on `SLURM 18.08.7`. It is known to break on older versions, such as `17.11.2` as described [here](https://github.com/albanie/slurm_gpustat/issues/7) (I unfortunately don't have access to older SLURM versions to fix these issues).
