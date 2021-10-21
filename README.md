@@ -1,14 +1,12 @@
 ## slurm_gpustat
 
-**NOTE**: This tool is adapted from its [original implementation](https://github.com/albanie/slurm_gpustat) to support `SLURM 17`. 
-
 `slurm_gpustat` is a simple command line utility that produces a summary of GPU usage on a slurm cluster. The tool can be used in two ways:
 1. To query the current usage of GPUs on the cluster.
 2. To launch a daemon which will log usage over time.  This log can later be queried to provide usage statistics.
 
 ### Installation
 
-Install via `pip install git+https://github.com/yuhui-zh15/slurm_gpustat.git`.  If you prefer to hack around with the source code, it's a [single python file](slurm_gpustat/slurm_gpustat.py).
+Install via `pip install slurm_gpustat`.  If you prefer to hack around with the source code, it's a [single python file](slurm_gpustat/slurm_gpustat.py).
 
 
 ### Usage
