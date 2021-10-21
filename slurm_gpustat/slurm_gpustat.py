@@ -536,6 +536,8 @@ def gpu_usage(resources: dict, partition: Optional[str] = None) -> dict:
             continue
         gpu_count_str, node_str, user, jobid = tokens
         gpu_count_tokens = gpu_count_str.split(":")
+        if not gpu_count_tokens[-1].isdigit():
+            gpu_count_tokens.append('1')
         num_gpus = int(gpu_count_tokens[-1])
         # get detailed job information, to check if using bash
         detailed_output = parse_cmd(detailed_job_cmd % jobid, split=False)
