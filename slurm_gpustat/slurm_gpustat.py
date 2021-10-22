@@ -523,7 +523,13 @@ def gpu_usage(resources: dict, partition: Optional[str] = None) -> dict:
     Returns:
         (dict): a summary of resources organised by user (and also by node name).
     """
-    cmd = "squeue -O tres-per-node:100,nodelist:100,username:100,jobid:100 --noheader"
+    version_cmd = "sinfo -V"
+    slurm_version = parse_cmd(version_cmd, split=False).split(" ")[1]
+    if slurm_version.startswith("17"):
+       resource_flag = "gres"
+    else:
+       resource_flag = "tres-per-node"
+    cmd = f"squeue -O {resource_flag}:100,nodelist:100,username:100,jobid:100 --noheader"
     if partition:
         cmd += f" --partition={partition}"
     detailed_job_cmd = "scontrol show jobid -dd %s"
@@ -536,6 +542,8 @@ def gpu_usage(resources: dict, partition: Optional[str] = None) -> dict:
             continue
         gpu_count_str, node_str, user, jobid = tokens
         gpu_count_tokens = gpu_count_str.split(":")
+        if not gpu_count_tokens[-1].isdigit():
+            gpu_count_tokens.append("1")
         num_gpus = int(gpu_count_tokens[-1])
         # get detailed job information, to check if using bash
         detailed_output = parse_cmd(detailed_job_cmd % jobid, split=False)

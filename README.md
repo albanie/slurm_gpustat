@@ -103,4 +103,3 @@ total > avg: 3
 * `seaborn`
 * `colored`
 
-**NOTE**: This tool has only been tested on `SLURM 18.08.7`. It is known to break on older versions, such as `17.11.2` as described [here](https://github.com/albanie/slurm_gpustat/issues/7) (I unfortunately don't have access to older SLURM versions to fix these issues).
