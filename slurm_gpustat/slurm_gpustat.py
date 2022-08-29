@@ -438,7 +438,7 @@ def parse_all_gpus(partition: Optional[str] = None,
 
     # Debug the regular expression below at
     # https://regex101.com/r/RHYM8Z/3
-    p = re.compile(r'gpu:(?:(\w*):)?(\d*)(?:\(\S*\))?\s*')
+    p = re.compile(r'gpu:(?:(\S*):)?(\d*)(?:\(\S*\))?\s*')
 
     for row in rows:
         node_str, resource_strs = row.split("|")
