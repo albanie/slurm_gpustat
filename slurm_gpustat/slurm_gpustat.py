@@ -538,7 +538,7 @@ def gpu_usage(resources: dict, partition: Optional[str] = None) -> dict:
     for row in rows:
         tokens = row.split()
         # ignore pending jobs
-        if len(tokens) < 4 or not tokens[0].startswith("gpu"):
+        if len(tokens) < 4 or 'gpu' not in tokens[0]:
             continue
         gpu_count_str, node_str, user, jobid = tokens
         gpu_count_tokens = gpu_count_str.split(":")
@@ -546,8 +546,9 @@ def gpu_usage(resources: dict, partition: Optional[str] = None) -> dict:
             gpu_count_tokens.append("1")
         num_gpus = int(gpu_count_tokens[-1])
         # get detailed job information, to check if using bash
-        detailed_output = parse_cmd(detailed_job_cmd % jobid, split=False)
-        is_bash = any([f'Command={x}\n' in detailed_output for x in INTERACTIVE_CMDS])
+        detailed_job_info = {row.split('=')[0].strip(): row.split('=')[1].strip()
+                             for row in parse_cmd(detailed_job_cmd % jobid, split=True) if '=' in row}
+        is_bash = any([x == detailed_job_info['Command'] for x in INTERACTIVE_CMDS])
         num_bash_gpus = num_gpus * is_bash
         node_names = parse_node_names(node_str)
         for node_name in node_names:
@@ -560,6 +561,8 @@ def gpu_usage(resources: dict, partition: Optional[str] = None) -> dict:
                 gpu_type = None
             elif len(gpu_count_tokens) == 3:
                 gpu_type = gpu_count_tokens[1]
+                if gpu_type=='gpu':
+                    gpu_type = detailed_job_info['JOB_GRES'].split(':')[1]
             if gpu_type is None:
                 if len(node_gpu_types) != 1:
                     gpu_type = sorted(
