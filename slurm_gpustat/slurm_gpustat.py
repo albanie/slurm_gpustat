@@ -726,13 +726,14 @@ def all_info(color: int, verbose: bool, partition: Optional[str] = None):
         online_df = online_df.set_index(["GPU model"])
 
         avail_df = pd.DataFrame(avail_table, columns=["GPU model", "available", "notes"])
+        avail_df.drop(columns="notes", inplace=True)
         avail_df = avail_df.set_index(["GPU model"])
 
         big_df = pd.DataFrame()
         for df in [all_gpus_df, online_df, avail_df]:
             big_df = big_df.merge(df, how='outer', left_index=True, right_index=True)
         big_df = big_df.sort_values(by="all", ascending=False)
-        print(tabulate(big_df, headers=(["GPU model", "all", "online", "available", "notes"])))
+        print(tabulate(big_df, headers=(["GPU model", "all", "online", "available"])))
         print(divider)
     in_use_table = in_use(resources, partition=partition,verbose=verbose)
     print(tabulate(in_use_table, showindex=False, headers="firstrow"))
