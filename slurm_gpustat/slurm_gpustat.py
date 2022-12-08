@@ -726,6 +726,7 @@ def all_info(color: int, verbose: bool, partition: Optional[str] = None):
         online_df = online_df.set_index(["GPU model"])
 
         avail_df = pd.DataFrame(avail_table, columns=["GPU model", "available", "notes"])
+        # notes only exist in verbose mode
         avail_df.drop(columns="notes", inplace=True)
         avail_df = avail_df.set_index(["GPU model"])
 
