@@ -13,7 +13,7 @@ with open("README.md", "r") as f:
 
 setuptools.setup(
     name="slurm_gpustat",
-    version="0.0.13",
+    version="0.0.14",
     entry_points={
         "console_scripts": [
             "slurm_gpustat=slurm_gpustat.slurm_gpustat:main",
@@ -28,10 +28,12 @@ setuptools.setup(
     python_requires=">=3.6",
     install_requires=[
         "numpy",
+        "pandas",
         "colored",
         "seaborn",
         "beartype",
         "humanize",
+        "tabulate",
         "humanfriendly",
     ],
     classifiers=[
