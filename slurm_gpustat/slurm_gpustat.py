@@ -33,7 +33,6 @@ from tabulate import tabulate
 
 # SLURM states which indicate that the node is not available for submitting jobs
 INACCESSIBLE = {"drain*", "down*", "drng", "drain", "down"}
-INTERACTIVE_CMDS = {"bash", "zsh", "sh"}
 
 # printed between each section of output
 DIVIDER = ""
@@ -550,11 +549,6 @@ def gpu_usage(resources: dict, partition: Optional[str] = None) -> dict:
         if not gpu_count_tokens[-1].isdigit():
             gpu_count_tokens.append("1")
         num_gpus = int(gpu_count_tokens[-1])
-        # get detailed job information, to check if using bash
-        detailed_job_info = {row.split('=')[0].strip(): row.split('=')[1].strip()
-                             for row in parse_cmd(detailed_job_cmd % jobid, split=True) if '=' in row}
-        is_bash = any([x == detailed_job_info['Command'] for x in INTERACTIVE_CMDS])
-        num_bash_gpus = num_gpus * is_bash
         node_names = parse_node_names(node_str)
         for node_name in node_names:
             # If a node still has jobs running but is draining, it will not be present
@@ -582,12 +576,10 @@ def gpu_usage(resources: dict, partition: Optional[str] = None) -> dict:
                     gpu_type = node_gpu_types[0]
             if gpu_type in usage[user]:
                 usage[user][gpu_type][node_name]['n_gpu'] += num_gpus
-                usage[user][gpu_type][node_name]['bash_gpu'] += num_bash_gpus
 
             else:
-                usage[user][gpu_type] = defaultdict(lambda: {'n_gpu': 0, 'bash_gpu': 0})
+                usage[user][gpu_type] = defaultdict(lambda: {'n_gpu': 0})
                 usage[user][gpu_type][node_name]['n_gpu'] += num_gpus
-                usage[user][gpu_type][node_name]['bash_gpu'] += num_bash_gpus
 
     return usage
 
@@ -607,13 +599,10 @@ def in_use(resources: dict = None, partition: Optional[str] = None, verbose: boo
         aggregates[user] = {}
         aggregates[user]['n_gpu'] = {key: sum([x['n_gpu'] for x in val.values()])
                                      for key, val in subdict.items()}
-        aggregates[user]['bash_gpu'] = {key: sum([x['bash_gpu'] for x in val.values()])
-                                        for key, val in subdict.items()}
     in_use_table = [["user", "total GPU's allocated", "count per GPU"]]
     for user, subdict in sorted(aggregates.items(),
                                 key=lambda x: sum(x[1]['n_gpu'].values()), reverse=True):
-        total = (f"{str(sum(subdict['n_gpu'].values())):2s} "
-            f"(interactive: {str(sum(subdict['bash_gpu'].values())):2s})")
+        total = (f"{str(sum(subdict['n_gpu'].values())):2s} ")
         summary_str = ", ".join([f"{key}: {val}" for key, val in subdict['n_gpu'].items()])
         in_use_table.append([user, total, summary_str])
     return in_use_table
