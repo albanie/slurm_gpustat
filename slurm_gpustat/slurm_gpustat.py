@@ -16,22 +16,26 @@ import argparse
 import functools
 import subprocess
 from typing import Optional
+from typing import List
 from pathlib import Path
 from datetime import datetime
 from collections import defaultdict
 
+import pandas as pd
 import numpy as np
 import colored
 import seaborn as sns
 import humanize
 import humanfriendly as hf
 from beartype import beartype
+from tabulate import tabulate
 
 
 # SLURM states which indicate that the node is not available for submitting jobs
 INACCESSIBLE = {"drain*", "down*", "drng", "drain", "down"}
-INTERACTIVE_CMDS = {"bash", "zsh", "sh"}
 
+# printed between each section of output
+DIVIDER = ""
 
 class Daemon:
     """A Generic linux daemon base class for python 3.x.
@@ -473,29 +477,29 @@ def resource_by_type(resources: dict) -> dict:
 
 
 @beartype
-def summary_by_type(resources: dict, tag: str):
+def summary_by_type(resources: dict, tag: str) -> List[List]:
     """Print out out a summary of cluster resources, organised by gpu type.
 
     Args:
         resources (dict): a summary of cluster resources, organised by node name.
         tag (str): a term that will be included in the printed summary.
     """
+    summary_table = []
     by_type = resource_by_type(resources)
     total = sum(x["count"] for sublist in by_type.values() for x in sublist)
-    agg_str = []
+    summary_table.append(["total", total])
     for key, val in sorted(by_type.items(), key=lambda x: sum(y["count"] for y in x[1])):
         gpu_count = sum(x["count"] for x in val)
-        agg_str.append(f"{gpu_count} {key} gpus")
-    print(f"There are a total of {total} gpus [{tag}]")
-    print("\n".join(agg_str))
+        summary_table.append([key, gpu_count])
+    return summary_table
 
 
 @beartype
-def summary(mode: str, resources: dict = None, states: dict = None):
+def summary(mode: str, resources: dict = None, states: dict = None) -> List[List]:
     """Generate a printed summary of the cluster resources.
 
     Args:
-        mode (str): the kind of resources to query (must be one of 'accessible', 'up').
+        mode (str): the kind of resources to query (must be one of 'online', 'all').
         resources (dict :: None): a summary of cluster resources, organised by node name.
         states (dict[str: str] :: None): a mapping between node names and SLURM states.
     """
@@ -503,14 +507,14 @@ def summary(mode: str, resources: dict = None, states: dict = None):
         resources = parse_all_gpus()
     if not states:
         states = node_states()
-    if mode == "accessible":
+    if mode == "online":
         res = {key: val for key, val in resources.items()
                if states.get(key, "down") not in INACCESSIBLE}
-    elif mode == "up":
+    elif mode == "all":
         res = resources
     else:
         raise ValueError(f"Unknown mode: {mode}")
-    summary_by_type(res, tag=mode)
+    return summary_by_type(res, tag=mode)
 
 
 @beartype
@@ -545,11 +549,6 @@ def gpu_usage(resources: dict, partition: Optional[str] = None) -> dict:
         if not gpu_count_tokens[-1].isdigit():
             gpu_count_tokens.append("1")
         num_gpus = int(gpu_count_tokens[-1])
-        # get detailed job information, to check if using bash
-        detailed_job_info = {row.split('=')[0].strip(): row.split('=')[1].strip()
-                             for row in parse_cmd(detailed_job_cmd % jobid, split=True) if '=' in row}
-        is_bash = any([x == detailed_job_info['Command'] for x in INTERACTIVE_CMDS])
-        num_bash_gpus = num_gpus * is_bash
         node_names = parse_node_names(node_str)
         for node_name in node_names:
             # If a node still has jobs running but is draining, it will not be present
@@ -577,18 +576,16 @@ def gpu_usage(resources: dict, partition: Optional[str] = None) -> dict:
                     gpu_type = node_gpu_types[0]
             if gpu_type in usage[user]:
                 usage[user][gpu_type][node_name]['n_gpu'] += num_gpus
-                usage[user][gpu_type][node_name]['bash_gpu'] += num_bash_gpus
 
             else:
-                usage[user][gpu_type] = defaultdict(lambda: {'n_gpu': 0, 'bash_gpu': 0})
+                usage[user][gpu_type] = defaultdict(lambda: {'n_gpu': 0})
                 usage[user][gpu_type][node_name]['n_gpu'] += num_gpus
-                usage[user][gpu_type][node_name]['bash_gpu'] += num_bash_gpus
 
     return usage
 
 
 @beartype
-def in_use(resources: dict = None, partition: Optional[str] = None):
+def in_use(resources: dict = None, partition: Optional[str] = None, verbose: bool = False) -> List[List]:
     """Print a short summary of the resources that are currently used by each user.
 
     Args:
@@ -602,23 +599,16 @@ def in_use(resources: dict = None, partition: Optional[str] = None):
         aggregates[user] = {}
         aggregates[user]['n_gpu'] = {key: sum([x['n_gpu'] for x in val.values()])
                                      for key, val in subdict.items()}
-        aggregates[user]['bash_gpu'] = {key: sum([x['bash_gpu'] for x in val.values()])
-                                        for key, val in subdict.items()}
-    print("Usage by user:")
+    in_use_table = [["user", "total GPU's allocated", "count per GPU"]]
     for user, subdict in sorted(aggregates.items(),
-                                key=lambda x: sum(x[1]['n_gpu'].values())):
-        total = (f"total: {str(sum(subdict['n_gpu'].values())):2s} "
-                 f"(interactive: {str(sum(subdict['bash_gpu'].values())):2s})")
+                                key=lambda x: sum(x[1]['n_gpu'].values()), reverse=True):
+        total = (f"{str(sum(subdict['n_gpu'].values())):2s} ")
         summary_str = ", ".join([f"{key}: {val}" for key, val in subdict['n_gpu'].items()])
-        print(f"{user:10s} [{total}] {summary_str}")
-
+        in_use_table.append([user, total, summary_str])
+    return in_use_table
 
 @beartype
-def available(
-        resources: dict = None,
-        states: dict = None,
-        verbose: bool = False,
-):
+def available(resources: dict = None, states: dict = None, verbose: bool = False) -> List[List]:
     """Print a short summary of resources available on the cluster.
 
     Args:
@@ -633,6 +623,7 @@ def available(
       until all GPUs on the server are assigned.  If more GPUs than this are listed as
       allocated by squeue, we assume any further GPU usage occurs by sharing GPUs.
     """
+    avail_table = []
     if not resources:
         resources = parse_all_gpus()
     if not states:
@@ -649,7 +640,7 @@ def available(
                 res[node_name][resource_idx]["count"] = count
     by_type = resource_by_type(res)
     total = sum(x["count"] for sublist in by_type.values() for x in sublist)
-    print(f"There are {total} gpus available:")
+    avail_table.append(["total", total, ""])
     for key, counts_for_gpu_type in by_type.items():
         gpu_count = sum(x["count"] for x in counts_for_gpu_type)
         tail = ""
@@ -664,7 +655,8 @@ def available(
                     details = f"[{', '.join(details)}] [{','.join(users)}]"
                     summary_strs.append(f"\n -> {node}: {count} {key} {details}")
             tail = " ".join(summary_strs)
-        print(f"{key}: {gpu_count} available {tail}")
+        avail_table.append([key, gpu_count, tail])
+    return avail_table
 
 
 @beartype
@@ -677,23 +669,64 @@ def all_info(color: int, verbose: bool, partition: Optional[str] = None):
         partition: the partition/queue (or multiple, comma separated) of interest.
             By default None, which queries all available partitions.
     """
-    divider, slurm_str = "---------------------------------", "SLURM"
+    divider, slurm_str = DIVIDER, "SLURM"
     if color:
         colors = sns.color_palette("hls", 8).as_hex()
         divider = colored.stylize(divider, colored.fg(colors[7]))
         slurm_str = colored.stylize(slurm_str, colored.fg(colors[0]))
     print(divider)
-    print(f"Under {slurm_str} management")
-    print(divider)
+    if verbose:
+        print(f"Under {slurm_str} management")
+        print(divider)
     resources = parse_all_gpus(partition=partition)
     states = node_states(partition=partition)
-    for mode in ("up", "accessible"):
-        summary(mode=mode, resources=resources, states=states)
+
+    all_gpus_table = summary(mode="all", resources=resources, states=states)
+    online_table = summary(mode="online", resources=resources, states=states)
+    avail_table = available(resources=resources, states=states, verbose=verbose)
+
+    # in verbose mode, just print each section normally
+    if verbose:
+        print("all GPU's:")
+        for row in all_gpus_table:
+            for x in row:
+                print(x, end='\t')
+            print('\n', end='')
+        print()
+        print("GPU's online:")
+        for row in online_table:
+            for x in row:
+                print(x, end='\t')
+            print('\n', end='')
+        print()
+        print("GPU's available:")
+        for row in avail_table:
+            for x in row:
+                print(x, end='\t')
+            print('\n', end='')
+        print()
+        print("Usage by user:")
+    # in non-verbose mode, merge the three summaries into one nice table
+    else:
+        all_gpus_df = pd.DataFrame(all_gpus_table, columns=["GPU model", "all"])
+        all_gpus_df = all_gpus_df.set_index(["GPU model"])
+
+        online_df = pd.DataFrame(online_table, columns=["GPU model", "online"])
+        online_df = online_df.set_index(["GPU model"])
+
+        avail_df = pd.DataFrame(avail_table, columns=["GPU model", "available", "notes"])
+        # notes only exist in verbose mode
+        avail_df.drop(columns="notes", inplace=True)
+        avail_df = avail_df.set_index(["GPU model"])
+
+        big_df = pd.DataFrame()
+        for df in [all_gpus_df, online_df, avail_df]:
+            big_df = big_df.merge(df, how='outer', left_index=True, right_index=True)
+        big_df = big_df.sort_values(by="all", ascending=False)
+        print(tabulate(big_df, headers=(["GPU model", "all", "online", "available"])))
         print(divider)
-    in_use(resources, partition=partition)
-    print(divider)
-    available(resources=resources, states=states, verbose=verbose)
-    print(divider)
+    in_use_table = in_use(resources, partition=partition,verbose=verbose)
+    print(tabulate(in_use_table, showindex=False, headers="firstrow"))
 
 
 def main():
