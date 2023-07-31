@@ -25,7 +25,7 @@ To start the logging dameon:
 
 To view a summary of logged data:
 
-`slurm_gpustat --action history`
+        `slurm_gpustat --action history`
 
 
 ### Example outputs

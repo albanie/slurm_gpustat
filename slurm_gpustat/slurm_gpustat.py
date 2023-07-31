@@ -5,37 +5,35 @@ The tool can be used in two ways:
 2. To launch a daemon which will log usage over time.  This can then later be queried
    to provide simple usage statistics.
 """
+import argparse
+import ast
+import atexit
+import functools
 import os
 import re
-import ast
+import signal
+import subprocess
 import sys
 import time
-import atexit
-import signal
-import argparse
-import functools
-import subprocess
-from typing import Optional
-from typing import List
-from pathlib import Path
-from datetime import datetime
 from collections import defaultdict
+from datetime import datetime
+from pathlib import Path
 
-import pandas as pd
-import numpy as np
-import colored
-import seaborn as sns
-import humanize
 import humanfriendly as hf
+import humanize
+import numpy as np
+import pandas as pd
 from beartype import beartype
+from beartype.typing import List, Optional, Tuple
 from tabulate import tabulate
-
+from termcolor import colored
 
 # SLURM states which indicate that the node is not available for submitting jobs
 INACCESSIBLE = {"drain*", "down*", "drng", "drain", "down"}
 
 # printed between each section of output
 DIVIDER = ""
+
 
 class Daemon:
     """A Generic linux daemon base class for python 3.x.
@@ -227,8 +225,8 @@ class GPUStatDaemon(Daemon):
         """Run the daemon - will intermittently log gpu usage to disk.
         """
         while True:
-            resources = parse_all_gpus()
-            usage = gpu_usage(resources)
+            resources = get_node2gpus_mapping()
+            usage = gpu_usage_grouped_by_user(resources)
             log_row = self.serialize_usage(usage)
             timestamp = datetime.now().strftime(GPUStatDaemon.timestamp_format)
             with open(self.log_path, "a") as f:
@@ -418,18 +416,14 @@ def occupancy_stats_for_node(node: str) -> dict:
 
 
 @beartype
-def parse_all_gpus(partition: Optional[str] = None,
-                   default_gpus: int = 4,
-                   default_gpu_name: str = "NONAME_GPU") -> dict:
+def get_node2gpus_mapping(
+        partition: Optional[str] = None,
+) -> dict:
     """Query SLURM for the number and types of GPUs under management.
 
     Args:
         partition: the partition/queue (or multiple, comma separated) of interest.
             By default None, which queries all available partitions.
-        default_gpus: The number of GPUs estimated for nodes that have incomplete SLURM
-            meta data.
-        default_gpu_name: The name of the GPU for nodes that have incomplete SLURM meta
-        data.
 
     Returns:
         a mapping between node names and a list of the GPUs that they have available.
@@ -440,23 +434,44 @@ def parse_all_gpus(partition: Optional[str] = None,
     rows = parse_cmd(cmd)
     resources = defaultdict(list)
 
-    # Debug the regular expression below at
-    # https://regex101.com/r/RHYM8Z/3
-    p = re.compile(r'gpu:(?:(\S*):)?(\d*)(?:\(\S*\))?\s*')
-
     for row in rows:
         node_str, resource_strs = row.split("|")
         for resource_str in resource_strs.split(","):
             if not resource_str.startswith("gpu"):
                 continue
-            match = p.search(resource_str)
-            gpu_type = match.group(1) if match.group(1) is not None else default_gpu_name
-            # if the number of GPUs is not specified, we assume it is `default_gpus`
-            gpu_count = int(match.group(2)) if match.group(2) != "" else default_gpus
+
+            gpu_type, gpu_count = parse_gpu_type_and_count_via_regex(resource_str)
             node_names = parse_node_names(node_str)
             for name in node_names:
                 resources[name].append({"type": gpu_type, "count": gpu_count})
+
     return resources
+
+
+@beartype
+def parse_gpu_type_and_count_via_regex(
+        resource_str: str,
+        default_gpus: int = 4,
+        default_gpu_name: str = "NONAME_GPU",
+) -> Tuple[str, int]:
+    """Parse the gpu type and gpu count from an sinfo output string using regex.
+
+    Args:
+        resource_str: the string parsed from sinfo from which we wish to extract information
+        default_gpus: The number of GPUs estimated for nodes that have incomplete SLURM
+            meta data.
+        default_gpu_name: The name of the GPU for nodes that have incomplete SLURM meta
+        data.
+    """
+
+    # Debug the regular expression below at
+    # https://regex101.com/r/RHYM8Z/3
+    p = re.compile(r"gpu:(?:(\w*?):)?(\d*)(?:\(\S*\))?\s*")
+    match = p.search(resource_str)
+    gpu_type = match.group(1) if match.group(1) is not None else default_gpu_name
+    # if the number of GPUs is not specified, we assume it is `default_gpus`
+    gpu_count = int(match.group(2)) if match.group(2) != "" else default_gpus
+    return gpu_type, gpu_count
 
 
 @beartype
@@ -504,7 +519,7 @@ def summary(mode: str, resources: dict = None, states: dict = None) -> List[List
         states (dict[str: str] :: None): a mapping between node names and SLURM states.
     """
     if not resources:
-        resources = parse_all_gpus()
+        resources = get_node2gpus_mapping()
     if not states:
         states = node_states()
     if mode == "online":
@@ -518,7 +533,7 @@ def summary(mode: str, resources: dict = None, states: dict = None) -> List[List
 
 
 @beartype
-def gpu_usage(resources: dict, partition: Optional[str] = None) -> dict:
+def gpu_usage_grouped_by_user(resources: dict, partition: Optional[str] = None) -> dict:
     """Build a data structure of the cluster resource usage, organised by user.
 
     Args:
@@ -530,9 +545,9 @@ def gpu_usage(resources: dict, partition: Optional[str] = None) -> dict:
     version_cmd = "sinfo -V"
     slurm_version = parse_cmd(version_cmd, split=False).split(" ")[1]
     if slurm_version.startswith("17"):
-       resource_flag = "gres"
+        resource_flag = "gres"
     else:
-       resource_flag = "tres-per-node"
+        resource_flag = "tres-per-node"
     cmd = f"squeue -O {resource_flag}:100,nodelist:100,username:100,jobid:100 --noheader"
     if partition:
         cmd += f" --partition={partition}"
@@ -549,6 +564,9 @@ def gpu_usage(resources: dict, partition: Optional[str] = None) -> dict:
         if not gpu_count_tokens[-1].isdigit():
             gpu_count_tokens.append("1")
         num_gpus = int(gpu_count_tokens[-1])
+        # get detailed job information, to check if using bash
+        detailed_job_info = {row.split('=')[0].strip(): row.split('=')[1].strip()
+                             for row in parse_cmd(detailed_job_cmd % jobid, split=True) if '=' in row}
         node_names = parse_node_names(node_str)
         for node_name in node_names:
             # If a node still has jobs running but is draining, it will not be present
@@ -560,7 +578,7 @@ def gpu_usage(resources: dict, partition: Optional[str] = None) -> dict:
                 gpu_type = None
             elif len(gpu_count_tokens) == 3:
                 gpu_type = gpu_count_tokens[1]
-                if gpu_type=='gpu':
+                if gpu_type == 'gpu':
                     gpu_type = detailed_job_info['JOB_GRES'].split(':')[1]
             if gpu_type is None:
                 if len(node_gpu_types) != 1:
@@ -580,20 +598,23 @@ def gpu_usage(resources: dict, partition: Optional[str] = None) -> dict:
             else:
                 usage[user][gpu_type] = defaultdict(lambda: {'n_gpu': 0})
                 usage[user][gpu_type][node_name]['n_gpu'] += num_gpus
-
     return usage
 
 
 @beartype
-def in_use(resources: dict = None, partition: Optional[str] = None, verbose: bool = False) -> List[List]:
+def in_use(
+        resources: dict = None,
+        partition: Optional[str] = None,
+        verbose: bool = False,
+) -> List[List]:
     """Print a short summary of the resources that are currently used by each user.
 
     Args:
         resources: a summary of cluster resources, organised by node name.
     """
     if not resources:
-        resources = parse_all_gpus()
-    usage = gpu_usage(resources, partition=partition)
+        resources = get_node2gpus_mapping()
+    usage = gpu_usage_grouped_by_user(resources, partition=partition)
     aggregates = {}
     for user, subdict in usage.items():
         aggregates[user] = {}
@@ -607,38 +628,47 @@ def in_use(resources: dict = None, partition: Optional[str] = None, verbose: boo
         in_use_table.append([user, total, summary_str])
     return in_use_table
 
+
 @beartype
-def available(resources: dict = None, states: dict = None, verbose: bool = False) -> List[List]:
+def available(
+        node2gpus_map: dict = None,
+        states: dict = None,
+        verbose: bool = False,
+) -> List[List]:
     """Print a short summary of resources available on the cluster.
 
     Args:
-        resources: a summary of cluster resources, organised by node name.
+        node2gpus_map: a summary of cluster resources, organised by node name.
         states: a mapping between node names and SLURM states.
         verbose: whether to output a more verbose summary of the cluster state.
 
     NOTES: Some systems allow users to share GPUs.  The logic below amounts to a
     conservative estimate of how many GPUs are available.  The algorithm is:
 
-      For each user that requests a GPU on a node, we assume that a new GPU is allocated
+    For each user that requests a GPU on a node, we assume that a new GPU is allocated
       until all GPUs on the server are assigned.  If more GPUs than this are listed as
       allocated by squeue, we assume any further GPU usage occurs by sharing GPUs.
     """
     avail_table = []
-    if not resources:
-        resources = parse_all_gpus()
+    if not node2gpus_map:
+        node2gpus_map = get_node2gpus_mapping()
     if not states:
         states = node_states()
-    res = {key: val for key, val in resources.items()
-           if states.get(key, "down") not in INACCESSIBLE}
-    usage = gpu_usage(resources=res)
-    for subdict in usage.values():
-        for gpu_type, node_dicts in subdict.items():
+
+    # drop nodes that are in down/inaccessible
+    node2gpus_map = {node: gpus for node, gpus in node2gpus_map.items()
+                     if states.get(node, "down") not in INACCESSIBLE}
+
+    gpu_usage_by_user = gpu_usage_grouped_by_user(resources=node2gpus_map)
+
+    for gpu_usage_for_user in gpu_usage_by_user.values():
+        for gpu_type, node_dicts in gpu_usage_for_user.items():
             for node_name, user_gpu_count in node_dicts.items():
-                resource_idx = [x["type"] for x in res[node_name]].index(gpu_type)
-                count = res[node_name][resource_idx]["count"]
+                resource_idx = [x["type"] for x in node2gpus_map[node_name]].index(gpu_type)
+                count = node2gpus_map[node_name][resource_idx]["count"]
                 count = max(count - user_gpu_count['n_gpu'], 0)
-                res[node_name][resource_idx]["count"] = count
-    by_type = resource_by_type(res)
+                node2gpus_map[node_name][resource_idx]["count"] = count
+    by_type = resource_by_type(node2gpus_map)
     total = sum(x["count"] for sublist in by_type.values() for x in sublist)
     avail_table.append(["total", total, ""])
     for key, counts_for_gpu_type in by_type.items():
@@ -650,7 +680,8 @@ def available(resources: dict = None, states: dict = None, verbose: bool = False
                 node, count = x["node"], x["count"]
                 if count:
                     occupancy = occupancy_stats_for_node(node)
-                    users = [user for user in usage if node in usage[user].get(key, [])]
+                    users = [user for user in gpu_usage_by_user
+                             if node in gpu_usage_by_user[user].get(key, [])]
                     details = [f"{key}: {val}" for key, val in sorted(occupancy.items())]
                     details = f"[{', '.join(details)}] [{','.join(users)}]"
                     summary_strs.append(f"\n -> {node}: {count} {key} {details}")
@@ -671,19 +702,19 @@ def all_info(color: int, verbose: bool, partition: Optional[str] = None):
     """
     divider, slurm_str = DIVIDER, "SLURM"
     if color:
-        colors = sns.color_palette("hls", 8).as_hex()
-        divider = colored.stylize(divider, colored.fg(colors[7]))
-        slurm_str = colored.stylize(slurm_str, colored.fg(colors[0]))
+        # colors = sns.color_palette("hls", 8).as_hex()
+        divider = colored(divider, "magenta")
+        slurm_str = colored(slurm_str, "red")
     print(divider)
     if verbose:
         print(f"Under {slurm_str} management")
         print(divider)
-    resources = parse_all_gpus(partition=partition)
+    resources = get_node2gpus_mapping(partition=partition)
     states = node_states(partition=partition)
 
     all_gpus_table = summary(mode="all", resources=resources, states=states)
     online_table = summary(mode="online", resources=resources, states=states)
-    avail_table = available(resources=resources, states=states, verbose=verbose)
+    avail_table = available(node2gpus_map=resources, states=states, verbose=verbose)
 
     # in verbose mode, just print each section normally
     if verbose:
@@ -725,7 +756,7 @@ def all_info(color: int, verbose: bool, partition: Optional[str] = None):
         big_df = big_df.sort_values(by="all", ascending=False)
         print(tabulate(big_df, headers=(["GPU model", "all", "online", "available"])))
         print(divider)
-    in_use_table = in_use(resources, partition=partition,verbose=verbose)
+    in_use_table = in_use(resources, partition=partition, verbose=verbose)
     print(tabulate(in_use_table, showindex=False, headers="firstrow"))
 
 

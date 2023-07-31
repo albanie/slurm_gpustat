@@ -1,6 +1,6 @@
 """
 Commands to upload:
-coverage run --source=. -m py.test
+coverage run --source=. -m pytest
 python3 setup.py sdist bdist_wheel
 twine upload --skip-existing dist/*
 """
@@ -13,7 +13,7 @@ with open("README.md", "r") as f:
 
 setuptools.setup(
     name="slurm_gpustat",
-    version="0.0.14",
+    version="0.0.15",
     entry_points={
         "console_scripts": [
             "slurm_gpustat=slurm_gpustat.slurm_gpustat:main",
@@ -37,7 +37,7 @@ setuptools.setup(
         "humanfriendly",
     ],
     classifiers=[
-        "Programming Language :: Python :: 3.6",
+        "Programming Language :: Python :: 3.9",
         "License :: OSI Approved :: MIT License",
         'Operating System :: POSIX :: Linux',
     ],
