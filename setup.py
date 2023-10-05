@@ -35,6 +35,7 @@ setuptools.setup(
         "humanize",
         "tabulate",
         "humanfriendly",
+        "termcolor",
     ],
     classifiers=[
         "Programming Language :: Python :: 3.9",
