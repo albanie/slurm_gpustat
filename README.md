@@ -1,5 +1,7 @@
 ## slurm_gpustat
 
+## Note: I no longer have access to a slurm cluster, so this tool is no longer actively maintained
+
 `slurm_gpustat` is a simple command line utility that produces a summary of GPU usage on a slurm cluster. The tool can be used in two ways:
 1. To query the current usage of GPUs on the cluster.
 2. To launch a daemon which will log usage over time.  This log can later be queried to provide usage statistics.
